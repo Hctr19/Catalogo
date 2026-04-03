@@ -10,7 +10,7 @@ import time
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Generador de Catálogos Arizone", page_icon="📦")
 
-# --- ESTILOS DE DISEÑO ---
+# --- ESTILOS DE DISEÑO (IDÉNTICOS A TU ORIGINAL) ---
 COLOR_FONDO = (238, 235, 227) 
 COLOR_CAJA = (218, 207, 184)  
 COLOR_TEXTO = (60, 60, 59)    
@@ -21,7 +21,7 @@ class CatalogoGrid(FPDF):
         self.set_fill_color(*COLOR_FONDO)
         self.rect(0, 0, 210, 297, 'F')
         
-        # Marco del Título
+        # Marco del Título Superior
         self.set_line_width(0.5)
         self.set_draw_color(*COLOR_TEXTO)
         self.rect(40, 10, 130, 25)
@@ -51,7 +51,7 @@ class CatalogoGrid(FPDF):
     def añadir_item_grid(self, sku, nombre, url_imagen, x, y):
         ancho_card, alto_img, alto_caja_texto = 50, 40, 10
         
-        # 1. Caja SKU
+        # 1. Caja Superior (SKU)
         self.set_fill_color(*COLOR_CAJA)
         self.rect(x, y, ancho_card, 6, 'F')
         self.set_xy(x, y)
@@ -59,7 +59,7 @@ class CatalogoGrid(FPDF):
         self.set_text_color(*COLOR_TEXTO)
         self.cell(ancho_card, 6, str(sku), align='C')
         
-        # 2. Imagen
+        # 2. Imagen (Con manejo de errores y transparencia)
         try:
             res = requests.get(url_imagen, timeout=10)
             img = Image.open(BytesIO(res.content))
@@ -70,32 +70,34 @@ class CatalogoGrid(FPDF):
             self.set_draw_color(200, 200, 200)
             self.rect(x, y + 8, ancho_card, alto_img)
             
-        # 3. Caja Nombre
+        # 3. Caja Inferior (Nombre con Ajuste de Texto)
         y_texto = y + 8 + alto_img + 2
         self.set_fill_color(*COLOR_CAJA)
         self.rect(x, y_texto, ancho_card, alto_caja_texto, 'F')
         
         texto_limpio = str(nombre).upper()
-        # Ajuste dinámico de fuente
-        fuente = 8
-        if len(texto_limpio) > 35: fuente = 6
-        elif len(texto_limpio) > 20: fuente = 7
+        # Lógica de ajuste de fuente según longitud
+        if len(texto_limpio) > 35:
+            fuente = 6
+            if len(texto_limpio) > 60: texto_limpio = texto_limpio[:57] + "..."
+        elif len(texto_limpio) > 20:
+            fuente = 7
+        else:
+            fuente = 8
             
         self.set_font('Helvetica', 'B', fuente)
         self.set_xy(x, y_texto + 1)
-        self.multi_cell(ancho_card, 4, texto_limpio[:60], align='C')
+        self.multi_cell(ancho_card, 4, texto_limpio, align='C')
 
-# --- INTERFAZ DE USUARIO ---
+# --- LÓGICA DE LA APLICACIÓN WEB ---
 st.title("📦 Generador de Catálogos Arizone")
-st.markdown("""
-Sube tu archivo **CSV** o **Excel** con las columnas `Sku`, `Nombre` e `IMAGEN`. 
-La aplicación generará un grid de 3x2 por página automáticamente.
-""")
+st.write("Sube tu archivo para generar el catálogo en formato grid (3x2 por página).")
 
-archivo = st.file_uploader("Subir archivo de datos", type=['csv', 'xlsx'])
+archivo = st.file_uploader("Subir archivo Excel o CSV", type=['csv', 'xlsx'])
 
 if archivo:
     try:
+        # Carga de datos
         if archivo.name.endswith('.csv'):
             df = pd.read_csv(archivo)
         else:
@@ -103,15 +105,10 @@ if archivo:
             
         st.success(f"✅ Se cargaron {len(df)} productos correctamente.")
         
-        # Opciones adicionales
-        with st.expander("Configuración avanzada"):
-            nombre_final = st.text_input("Nombre del archivo PDF", "Catalogo_Arizone")
-            procesar_todo = st.checkbox("Procesar todos los productos", value=True)
-            if not procesar_todo:
-                cantidad = st.slider("Cantidad de productos a procesar", 1, len(df), 10)
-                df = df.head(cantidad)
+        # Configuración del nombre del archivo
+        nombre_pdf = st.text_input("Nombre para tu PDF:", "Catalogo_Arizone")
 
-        if st.button("🚀 Generar PDF Ahora"):
+        if st.button("🚀 Iniciar Generación de Catálogo"):
             pdf = CatalogoGrid()
             pdf.set_auto_page_break(auto=True, margin=30)
             pdf.add_page()
@@ -119,10 +116,12 @@ if archivo:
             x_inicial, y_inicial = 25, 65
             col_spacing, row_spacing = 55, 85
             
-            progress_text = "Descargando imágenes y armando el grid..."
-            bar = st.progress(0, text=progress_text)
+            # Barra de progreso
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
             for i, (index, row) in enumerate(df.iterrows()):
+                # Posicionamiento 3x2
                 col = i % 3
                 fila = (i // 3) % 2
                 
@@ -130,27 +129,32 @@ if archivo:
                     pdf.add_page()
                 
                 pdf.añadir_item_grid(
-                    sku=row.get('Sku', 'N/A'),
+                    sku=row.get('Sku', row.get('SKU', 'N/A')),
                     nombre=row.get('Nombre', 'S/N'),
-                    url_imagen=row.get('IMAGEN', ''),
+                    url_imagen=row.get('IMAGEN', row.get('Imagen', '')),
                     x=x_inicial + (col * col_spacing),
                     y=y_inicial + (fila * row_spacing)
                 )
                 
-                # Actualizar barra de progreso
+                # Actualizar progreso
                 percent = (i + 1) / len(df)
-                bar.progress(percent, text=f"Procesando {i+1} de {len(df)} productos...")
+                progress_bar.progress(percent)
+                status_text.text(f"Procesando producto {i+1} de {len(df)}...")
 
-            # GENERACIÓN DE BYTES (CORRECCIÓN DE ERROR)
-            pdf_bytes = pdf.output() # fpdf2 devuelve bytes por defecto
+            # --- CORRECCIÓN DEFINITIVA DE BYTES PARA STREAMLIT ---
+            # Obtenemos la salida de fpdf2 (bytearray)
+            pdf_output = pdf.output()
             
+            # Convertimos estrictamente a objeto 'bytes' para el botón
+            pdf_bytes = bytes(pdf_output)
+
             st.balloons()
             st.download_button(
                 label="⬇️ DESCARGAR CATÁLOGO PDF",
                 data=pdf_bytes,
-                file_name=f"{nombre_final}.pdf",
+                file_name=f"{nombre_pdf}.pdf",
                 mime="application/pdf"
             )
             
     except Exception as e:
-        st.error(f"Hubo un error al procesar el archivo: {e}")
+        st.error(f"Error crítico: {e}")
