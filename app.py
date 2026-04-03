@@ -37,7 +37,7 @@ class CatalogoGrid(FPDF):
         self.multi_cell(ancho_card, 4, str(nombre).upper()[:60], align='C')
 
 # --- DISEÑO 2: CLASE SPIDER (LISTA) ---
-class CatalogoSpider(FPDF):
+class CatalogoLista(FPDF):
     def header(self):
         self.set_fill_color(227, 29, 43); self.polygon([(185, 0), (210, 0), (210, 25)], fill=True)
         self.set_font('Helvetica', 'B', 11); self.set_text_color(255, 255, 255)
