@@ -3,7 +3,8 @@ import streamlit as st
 st.set_page_config(
     page_title="ARIZONE - Suite de Catálogos",
     page_icon="🛠️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"  # <--- ESTA LÍNEA ES LA CLAVE
 )
 
 st.title("🚀 Bienvenido a la Suite de Herramientas ARIZONE")
