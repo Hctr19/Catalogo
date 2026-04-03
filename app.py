@@ -93,13 +93,13 @@ elif modo == "Catálogo Grid":
                 bar.progress((i+1)/len(df))
             st.download_button("⬇️ Descargar PDF", data=bytes(pdf.output()), file_name="Grid.pdf")
 
-elif modo == "Catálogo Spider":
-    st.title("🕷️ Catálogo Formato Spider")
+elif modo == "Catálogo Lista":
+    st.title("Catálogo lista")
     archivo = st.file_uploader("Sube Excel/CSV (Sku, Nombre, Detalles, IMAGEN, Compatibilidad)", type=['csv', 'xlsx'])
     if archivo:
         df = pd.read_csv(archivo) if archivo.name.endswith('.csv') else pd.read_excel(archivo)
         if st.button("🚀 Generar Spider"):
-            pdf = CatalogoSpider(); pdf.add_page()
+            pdf = CatalogoLista(); pdf.add_page()
             bar = st.progress(0)
             for i, row in df.iterrows():
                 pdf.añadir_producto(row.get('Sku',''), row.get('Nombre',''), row.get('Detalles',''), row.get('IMAGEN',''), row.get('Compatibilidad',''))
