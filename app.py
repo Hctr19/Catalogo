@@ -36,7 +36,7 @@ class CatalogoGrid(FPDF):
         self.set_font('Helvetica', 'B', 7); self.set_xy(x, y_texto + 1)
         self.multi_cell(ancho_card, 4, str(nombre).upper()[:60], align='C')
 
-# --- DISEÑO 2: CLASE SPIDER (LISTA) ---
+# --- DISEÑO 2: CLASE LISTA (VERTICAL) ---
 class CatalogoLista(FPDF):
     def header(self):
         self.set_fill_color(227, 29, 43); self.polygon([(185, 0), (210, 0), (210, 25)], fill=True)
@@ -72,14 +72,15 @@ class CatalogoLista(FPDF):
 
 # --- MENÚ LATERAL ---
 st.sidebar.title("Menú de Herramientas")
-modo = st.sidebar.radio("Selecciona un catálogo:", ["Inicio", "Catálogo Grid", "Catálogo Spider"])
+modo = st.sidebar.radio("Selecciona un formato:", ["Inicio", "Catálogo Cuadrícula", "Catálogo Lista"])
 
 if modo == "Inicio":
     st.title("🚀 Bienvenido a la Suite ARIZONE")
-    st.info("Selecciona un formato en el menú de la izquierda para comenzar.")
+    st.markdown("---")
+    st.info("Selecciona un formato en el menú de la izquierda para comenzar a subir tus archivos.")
 
-elif modo == "Catálogo Grid":
-    st.title("📦 Catálogo Formato Cuadrícula")
+elif modo == "Catálogo Cuadrícula":
+    st.title("📦 Catálogo Formato Cuadrícula (3x2)")
     archivo = st.file_uploader("Sube Excel/CSV (Sku, Nombre, IMAGEN)", type=['csv', 'xlsx'])
     if archivo:
         df = pd.read_csv(archivo) if archivo.name.endswith('.csv') else pd.read_excel(archivo)
@@ -91,17 +92,17 @@ elif modo == "Catálogo Grid":
                 if i > 0 and i % 6 == 0: pdf.add_page()
                 pdf.añadir_item_grid(row.get('Sku',''), row.get('Nombre',''), row.get('IMAGEN',''), x_ini + ((i%3)*c_spc), y_ini + (((i//3)%2)*r_spc))
                 bar.progress((i+1)/len(df))
-            st.download_button("⬇️ Descargar PDF", data=bytes(pdf.output()), file_name="Grid.pdf")
+            st.download_button("⬇️ Descargar PDF", data=bytes(pdf.output()), file_name="Catalogo_Cuadricula.pdf")
 
 elif modo == "Catálogo Lista":
-    st.title("Catálogo lista")
+    st.title("📑 Catálogo Formato Lista (Detallado)")
     archivo = st.file_uploader("Sube Excel/CSV (Sku, Nombre, Detalles, IMAGEN, Compatibilidad)", type=['csv', 'xlsx'])
     if archivo:
         df = pd.read_csv(archivo) if archivo.name.endswith('.csv') else pd.read_excel(archivo)
-        if st.button("🚀 Generar Spider"):
+        if st.button("🚀 Generar Lista"):
             pdf = CatalogoLista(); pdf.add_page()
             bar = st.progress(0)
             for i, row in df.iterrows():
                 pdf.añadir_producto(row.get('Sku',''), row.get('Nombre',''), row.get('Detalles',''), row.get('IMAGEN',''), row.get('Compatibilidad',''))
                 bar.progress((i+1)/len(df))
-            st.download_button("⬇️ Descargar PDF", data=bytes(pdf.output()), file_name="Spider.pdf")
+            st.download_button("⬇️ Descargar PDF", data=bytes(pdf.output()), file_name="Catalogo_Lista.pdf")
