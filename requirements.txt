@@ -3,4 +3,5 @@ pandas
 requests
 Pillow
 reportlab
+fpdf2
 openpyxl
