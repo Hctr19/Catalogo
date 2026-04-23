@@ -22,66 +22,178 @@ from fpdf.enums import XPos, YPos
 from PIL import Image, ImageDraw, ImageFont
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="ARIZONE - Suite", layout="wide")
+st.set_page_config(page_title="ARIZONE - Multi App 2026", layout="wide", page_icon="🚀")
 
-# Rutas de las fuentes en el repositorio
+# Ruta de la fuente
 FONT_BOLD_PATH = "Arial Bold.ttf"
-FONT_REG_PATH = "Arial Bold.ttf" 
+
+# --- LÓGICA DE AUTORELLENO DE ESTADOS (MÉXICO) ---
+def obtener_estado_por_cp(cp):
+    if not cp or len(cp) < 2: return ""
+    prefijo = cp[:2]
+    mapeo = {
+        "01": "CX", "02": "CX", "03": "CX", "04": "CX", "05": "CX", "06": "CX", "07": "CX", "08": "CX", "09": "CX", "10": "CX", "11": "CX", "12": "CX", "13": "CX", "14": "CX", "15": "CX", "16": "CX",
+        "20": "AG", "21": "BC", "22": "BC", "23": "BS", "24": "CM", "29": "CH", "30": "CH", "31": "CH", "32": "CH", "33": "CH", "34": "DG", "35": "DG", "36": "GT", "37": "GT", "38": "GT", "39": "GR",
+        "40": "GR", "41": "GR", "42": "HG", "43": "HG", "44": "JC", "45": "JC", "46": "JC", "47": "JC", "48": "JC", "49": "JC", "50": "EM", "51": "EM", "52": "EM", "53": "EM", "54": "EM", "55": "EM", "56": "EM", "57": "EM",
+        "58": "MI", "59": "MI", "60": "MI", "61": "MI", "62": "MO", "63": "NA", "64": "NL", "65": "NL", "66": "NL", "67": "NL", "68": "OA", "69": "OA", "70": "OA", "71": "OA", "72": "PU", "73": "PU", "74": "PU", "75": "PU",
+        "76": "QT", "77": "QR", "78": "SL", "79": "SL", "80": "SI", "81": "SI", "82": "SI", "83": "SO", "84": "SO", "85": "SO", "86": "TB", "87": "TM", "88": "TM", "89": "TM", "90": "TL", "91": "VE", "92": "VE", "93": "VE", "94": "VE", "95": "VE", "96": "VE", "97": "YU", "98": "ZA", "99": "ZA"
+    }
+    return mapeo.get(prefijo, "")
 
 # ==========================================
-# 1. DISEÑOS PDF (GRID Y LISTA) - UNICODE OK
+# MÓDULO: COTIZADOR (OPTIMIZADO)
 # ==========================================
 
-class CatalogoGrid(FPDF):
-    def __init__(self):
-        super().__init__()
-        try:
-            self.add_font("ArialCustom", "", FONT_REG_PATH)
-            self.add_font("ArialCustom", "B", FONT_BOLD_PATH)
-            self.fuente_pdf = "ArialCustom"
-        except:
-            self.fuente_pdf = "Helvetica"
+def app_cotizador():
+    st.title("🚚 Cotizador de Envíos ARIZONE")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📍 Origen")
+        cp_o = st.text_input("CP Origen", value="89364")
+        est_o_auto = obtener_estado_por_cp(cp_o)
+        estado_o = st.text_input("Estado Origen", value=est_o_auto if est_o_auto else "TM").upper()
+        ciudad_o = st.text_input("Ciudad Origen", value="Tampico")
+        peso = st.number_input("Peso total (kg)", min_value=0.1, value=1.0, step=0.1)
 
-    def header(self):
-        self.set_fill_color(238, 235, 227); self.rect(0, 0, 210, 297, 'F')
-        self.set_line_width(0.5); self.set_draw_color(60, 60, 59)
-        self.rect(40, 10, 130, 25); self.rect(42, 12, 126, 21)
-        self.set_xy(40, 15); self.set_font(self.fuente_pdf, 'B', 16); self.set_text_color(60, 60, 59)
-        self.cell(130, 8, "MODELOS DISPONIBLES", align='C', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    with col2:
+        st.subheader("🏁 Destino")
+        cp_d = st.text_input("CP Destino", value="")
+        est_d_auto = obtener_estado_por_cp(cp_d)
+        estado_d = st.text_input("Estado Destino", value=est_d_auto).upper()
+        ciudad_d = st.text_input("Ciudad Destino", value="")
+        st.write("")
+        st.info("Servicio: Parcel (Paquetería)")
 
-    def añadir_item_grid(self, sku, nombre, url_imagen, x, y):
-        ancho_card, alto_img = 50, 40
-        self.set_fill_color(218, 207, 184); self.rect(x, y, ancho_card, 6, 'F')
-        self.set_xy(x, y); self.set_font(self.fuente_pdf, 'B', 9); self.cell(ancho_card, 6, str(sku), align='C')
-        try:
-            res = requests.get(url_imagen, timeout=5)
-            img = Image.open(BytesIO(res.content))
-            if img.mode in ("RGBA", "P"): img = img.convert("RGB")
-            self.image(img, x=x, y=y + 8, w=ancho_card, h=alto_img)
-        except: self.rect(x, y + 8, ancho_card, alto_img)
-        y_texto = y + 8 + alto_img + 2
-        self.set_fill_color(218, 207, 184); self.rect(x, y_texto, ancho_card, 10, 'F')
-        self.set_font(self.fuente_pdf, 'B', 7); self.set_xy(x, y_texto + 1)
-        self.multi_cell(ancho_card, 4, str(nombre).upper()[:60], align='C')
+    st.markdown("---")
+    st.subheader("📦 Dimensiones (cm)")
+    c1, c2, c3 = st.columns(3)
+    largo = c1.number_input("Largo", min_value=1, value=20)
+    ancho = c2.number_input("Ancho", min_value=1, value=20)
+    alto = c3.number_input("Alto", min_value=1, value=20)
+
+    if st.button("Cotizar Todas las Paqueterías"):
+        if not cp_d or not ciudad_d:
+            st.error("Completa el CP y Ciudad de destino.")
+            return
+
+        # Lista de paqueterías a consultar
+        paqueterias = ["afimex", "paquetexpress", "estafeta", "tresguerras", "fedex"]
+        resultados_totales = []
+        progress = st.progress(0)
+        status = st.empty()
+        
+        for i, carrier in enumerate(paqueterias):
+            status.text(f"Consultando {carrier.capitalize()}...")
+            try:
+                url = "https://api.envia.com/ship/rate/"
+                token = st.secrets["ENVIA_TOKEN"].replace("Bearer ", "").strip()
+                headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                
+                payload = {
+                    "origin": {
+                        "name": "ARIZONE", "company": "ARIZONE", "email": "v@a.mx", "phone": "8331",
+                        "street": "AV", "number": "1", "district": "CENTRO",
+                        "city": ciudad_o, "state": estado_o, "country": "MX", "postalCode": str(cp_o)
+                    },
+                    "destination": {
+                        "name": "CLIENTE", "company": "C", "email": "c@t.com", "phone": "811",
+                        "street": "C", "number": "1", "district": "CENTRO",
+                        "city": ciudad_d, "state": estado_d, "country": "MX", "postalCode": str(cp_d)
+                    },
+                    "packages": [{
+                        "type": "box", "content": "autopartes", "amount": 1, "declaredValue": 500,
+                        "weight": float(peso), "weightUnit": "KG", "lengthUnit": "CM",
+                        "dimensions": {"length": int(largo), "width": int(ancho), "height": int(alto)}
+                    }],
+                    "shipment": {"type": 1, "carrier": carrier},
+                    "settings": {"currency": "MXN"}
+                }
+                
+                res_raw = requests.post(url, json=payload, headers=headers)
+                data = res_raw.json()
+                
+                if "data" in data and data["data"]:
+                    for r in data["data"]:
+                        resultados_totales.append({
+                            'Paquetería': r.get('carrierDescription', carrier.capitalize()),
+                            'Servicio': r.get('serviceDescription', 'N/A'),
+                            'Entrega': r.get('deliveryEstimate', 'N/A'),
+                            'Costo ($)': r.get('totalPrice', 0)
+                        })
+                else:
+                    # Si no hay datos, mostramos por qué falló esta paquetería específica
+                    if "error" in data:
+                        st.warning(f"Aviso {carrier.capitalize()}: {data['error']['message']}")
+            except Exception as e:
+                st.error(f"Error técnico consultando {carrier}: {e}")
+            
+            progress.progress((i + 1) / len(paqueterias))
+        
+        status.empty()
+        progress.empty()
+
+        if resultados_totales:
+            df_view = pd.DataFrame(resultados_totales)
+            st.success("Comparativa de tarifas generada:")
+            st.dataframe(df_view.sort_values('Costo ($)'), use_container_width=True)
+        else:
+            st.warning("No se encontraron rutas disponibles en ninguna paquetería para estos datos.")
+
+# ==========================================
+# MÓDULO: CALCULADORA DE COMISIONES
+# ==========================================
+
+def app_calculadora():
+    st.title("💰 Calculadora de Comisiones de Pago")
+    monto = st.sidebar.number_input("Monto Venta ($)", min_value=1.0, value=10000.0)
+    meses = st.sidebar.selectbox("Plazo en meses", options=[0, 3, 6, 9, 12])
+    
+    p_op = {0: 3.36, 3: 8.93, 6: 12.41, 9: 15.89, 12: 19.37}
+    p_mp = {0: 3.70, 3: 9.14, 6: 12.62, 9: 16.68, 12: 18.65}
+    p_eg = {0: 3.36, 3: 8.31, 6: 11.83, 9: 13.22, 12: 18.44}
+    p_ea = {0: 3.36, 3: 7.13, 6: 10.61, 9: 12.93, 12: 15.25}
+
+    procesadores = [
+        {"n": "OPENPAY", "f": 2.90, "p": p_op[meses]},
+        {"n": "MERCADOPAGO", "f": 4.64, "p": p_mp[meses]},
+        {"n": "ECARTPAY GENERAL", "f": 4.29, "p": p_eg[meses]},
+        {"n": "ECART AMEX", "f": 4.29, "p": p_ea[meses]}
+    ]
+    
+    final_res = []
+    for pr in procesadores:
+        com = (monto * (pr["p"] / 100)) + pr["f"]
+        final_res.append({
+            "Procesador": pr["n"], 
+            "%": f"{pr['p']}%", 
+            "Comisión Total": round(com, 2), 
+            "Neto a Recibir": round(monto - com, 2)
+        })
+    st.table(pd.DataFrame(final_res))
+
+# ==========================================
+# MÓDULO: ARIZONE DESIGN (CATÁLOGOS)
+# ==========================================
 
 class CatalogoLista(FPDF):
-    def __init__(self):
+    def __init__(self, mostrar_precio=True):
         super().__init__()
+        self.mostrar_precio = mostrar_precio
         try:
-            self.add_font("ArialCustom", "", FONT_REG_PATH)
             self.add_font("ArialCustom", "B", FONT_BOLD_PATH)
             self.fuente_pdf = "ArialCustom"
-        except:
-            self.fuente_pdf = "Helvetica"
+        except: self.fuente_pdf = "Helvetica"
 
     def header(self):
-        self.set_fill_color(227, 29, 43); self.polygon([(185, 0), (210, 0), (210, 25)], fill=True)
+        self.set_fill_color(227, 29, 43)
+        self.polygon([(185, 0), (210, 0), (210, 25)], fill=True)
         self.set_font(self.fuente_pdf, 'B', 11); self.set_text_color(255, 255, 255)
         self.set_xy(198, 4); self.cell(10, 10, str(self.page_no()), align='C')
         self.set_text_color(50, 50, 50); self.set_font(self.fuente_pdf, 'B', 10); self.set_xy(10, 10)
         self.cell(0, 10, "CATALOGO PRODUCTOS 2026", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-    def añadir_producto(self, sku, nombre, url_img):
+    def añadir_producto(self, sku, nombre, url_img, precio="", almacen=""):
         if self.get_y() > 210: self.add_page()
         y_ini = self.get_y()
         try:
@@ -90,185 +202,152 @@ class CatalogoLista(FPDF):
             if img.mode in ("RGBA", "P"): img = img.convert("RGB")
             self.image(img, x=10, y=y_ini + 5, w=85, h=60, keep_aspect_ratio=True)
         except: self.rect(10, y_ini + 5, 85, 60)
-        cX = 105; self.set_xy(cX, y_ini + 6); self.set_font(self.fuente_pdf, 'B', 20); self.set_text_color(227, 29, 43)
+        
+        cX = 105; self.set_xy(cX, y_ini + 6); self.set_font(self.fuente_pdf, 'B', 18); self.set_text_color(227, 29, 43)
         self.cell(0, 10, str(sku).upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_x(cX); self.set_font(self.fuente_pdf, 'B', 11); self.set_text_color(0,0,0); self.multi_cell(95, 5, str(nombre))
+        self.set_x(cX); self.set_font(self.fuente_pdf, 'B', 11); self.set_text_color(0,0,0)
+        self.multi_cell(95, 5, str(nombre))
+        
+        if self.mostrar_precio and precio:
+            self.ln(2); self.set_x(cX); self.set_font(self.fuente_pdf, 'B', 14); self.set_text_color(227, 29, 43)
+            p_limpio = str(precio).replace('$', '').strip()
+            self.cell(0, 8, f"$ {p_limpio}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        
+        self.set_x(cX); self.set_font(self.fuente_pdf, 'B', 7); self.set_text_color(100,100,100)
+        self.cell(0, 5, f"Stock: {almacen}")
         self.set_y(y_ini + 75); self.set_draw_color(227, 29, 43); self.line(10, self.get_y(), 200, self.get_y()); self.ln(8)
 
-# ==========================================
-# 2. DISEÑO 3x3 PRO (REPORTLAB)
-# ==========================================
-
-def generar_pdf_3x3_original(df, imagen_fondo=None):
-    output = BytesIO()
-    c = canvas.Canvas(output, pagesize=A4)
-    width, height = A4
-    fondo_reader = ImageReader(imagen_fondo) if imagen_fondo else None
-
-    try:
-        pdfmetrics.registerFont(TTFont('Arial-Bold', FONT_BOLD_PATH))
-        f_bold = "Arial-Bold"
-    except:
-        f_bold = "Helvetica-Bold"
-
-    cols, rows, margin, padding = 3, 3, 1 * cm, 0.35 * cm
-    cell_w, cell_h = (width - 2*margin)/cols, (height - 2*margin)/rows
-    style_nombre = ParagraphStyle('NombreStyle', fontSize=8, leading=9.5, textColor=colors.black, fontName=f_bold)
-
-    for i, row in df.iterrows():
-        idx = i % 9
-        if idx == 0:
-            if fondo_reader: c.drawImage(fondo_reader, 0, 0, width=width, height=height)
-            else: c.setFillColor(colors.white); c.rect(0, 0, width, height, fill=1)
-            c.setFillColor(colors.HexColor("#333333")); c.roundRect(0.8*cm, height-1.2*cm, 5.5*cm, 0.7*cm, 3, fill=1)
-            c.setFillColor(colors.white); c.setFont(f_bold, 10); c.drawCentredString(3.55*cm, height-0.95*cm, "PRODUCTOS DISPONIBLES")
-            c.setFillColor(colors.black); c.setFont("Helvetica", 9); c.drawRightString(width-1*cm, 0.5*cm, f"Página { (i//9)+1 }")
-
-        col, fil = idx % cols, rows - 1 - (idx // cols)
-        x_base, y_base = margin + (col * cell_w), margin + (fil * cell_h)
-        c.setStrokeColor(colors.black); c.setLineWidth(0.4); c.setFillColor(colors.white)
-        c.rect(x_base+3, y_base+3, cell_w-6, cell_h-6, fill=1, stroke=1)
-        
-        x, y, w, h = x_base+padding, y_base+padding, cell_w-(2*padding), cell_h-(2*padding)
-        try:
-            img = ImageReader(BytesIO(requests.get(row['IMAGEN'], timeout=10).content))
-            c.drawImage(img, x, y + (h*0.42), width=w, height=h*0.55, preserveAspectRatio=True, anchor='c')
-        except: pass
-
-        c.setFont(f_bold, 9); c.setFillColor(colors.black); c.drawString(x, y + (h*0.36), str(row['Sku']))
-        
-        # Unificación: PRECIO 1 (Limpieza de doble $)
-        precio_val = str(row.get('PRECIO 1', '0')).replace('$', '').strip()
-        precio_texto = f"$ {precio_val}"
-        
-        c.setFont(f_bold, 10); tw = c.stringWidth(precio_texto, f_bold, 10)
-        c.setFillColor(colors.red); c.roundRect(x, y+8, tw+8, 14, 2, fill=1)
-        c.setFillColor(colors.white); c.drawString(x+4, y+11.5, precio_texto)
-        c.setFillColor(colors.black); c.setFont("Helvetica", 7); c.drawRightString(x+w, y+11.5, f"Stock: {row['Almacen']}")
-        p = Paragraph(str(row['Nombre']), style_nombre); p_w, p_h = p.wrap(w, (y+(h*0.36))-(y+26)); p.drawOn(c, x, (y+(h*0.36))-p_h-2)
-        if (i+1) % 9 == 0: c.showPage()
-    
-    c.save(); return output.getvalue()
-
-# ==========================================
-# 3. VOLANTES PNG (PILLOW)
-# ==========================================
-
-def get_image(url):
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=10)
-        return Image.open(BytesIO(res.content)).convert("RGBA")
-    except: return None
-
-def draw_product_card(draw, img_canvas, row, x, y):
-    card_w, card_h = 330, 400
-    x0, y0 = x - card_w // 2, y - card_h // 2
-    draw.rectangle([x0, y0, x0+card_w, y0+card_h], fill=(255, 255, 255), outline=(220, 220, 220), width=1)
-    
-    try:
-        f_sku = ImageFont.truetype(FONT_BOLD_PATH, 18)
-        f_price = ImageFont.truetype(FONT_BOLD_PATH, 22) 
-        f_name_base = ImageFont.truetype(FONT_BOLD_PATH, 13)
-    except:
-        f_sku = f_price = f_name_base = ImageFont.load_default()
-
-    p_img = get_image(row['IMAGEN'])
-    if p_img:
-        p_img.thumbnail((280, 240))
-        img_canvas.paste(p_img, (x - p_img.width // 2, y0 + 30), p_img if p_img.mode == 'RGBA' else None)
-
-    y_start = y0 + card_h - 85
-    
-    # Unificación: PRECIO 1 (Limpieza de doble $)
-    precio_raw = str(row.get('PRECIO 1', '0')).replace('$', '').strip()
-    price_str = f"$ {precio_raw}"
-    
-    price_w = draw.textlength(price_str, font=f_price) + 16 
-    price_h = 48 
-    px0, py0 = x0 + 15, y_start
-
-    draw.rectangle([px0, py0, px0 + price_w, py0 + price_h], fill=(227, 29, 43))
-    draw.text((px0 + price_w/2, py0 + price_h/2), price_str, fill="white", font=f_price, anchor="mm")
-
-    text_x = px0 + price_w + 12
-    draw.text((text_x, y_start + 2), str(row['Sku']), fill=(50, 50, 50), font=f_sku)
-    nombre_raw = str(row['Nombre']).upper()
-    nombre_wrap = textwrap.wrap(nombre_raw, width=20)
-    current_y = y_start + 24
-    for line in nombre_wrap[:3]:
-        draw.text((text_x, current_y), line, fill=(0,0,0), font=f_name_base)
-        current_y += 16
-
-def generate_grid_flyer(df_chunk):
+def generate_grid_flyer_social(df_chunk, mostrar_precio=True):
     W, H = 1080, 1080
     img = Image.new('RGB', (W, H), color=(255, 255, 255))
     draw = ImageDraw.Draw(img)
-    try: f_title = ImageFont.truetype(FONT_BOLD_PATH, 60); f_footer = ImageFont.truetype(FONT_BOLD_PATH, 18)
-    except: f_title = f_footer = ImageFont.load_default()
+    try: 
+        f_title = ImageFont.truetype(FONT_BOLD_PATH, 60); f_sku = ImageFont.truetype(FONT_BOLD_PATH, 18)
+        f_price = ImageFont.truetype(FONT_BOLD_PATH, 22); f_name = ImageFont.truetype(FONT_BOLD_PATH, 13)
+    except: 
+        f_title = f_sku = f_price = f_name = ImageFont.load_default()
+    
     draw.rectangle([210, 35, 870, 115], fill=(227, 29, 43))
     draw.text((540, 75), "PROMOCIONES ACTIVAS", fill="white", font=f_title, anchor="mm")
+    
     POSS = [(185, 360), (540, 360), (895, 360), (185, 780), (540, 780), (895, 780)]
-    for i, (idx, row) in enumerate(df_chunk.iterrows()):
-        if i < 6: draw_product_card(draw, img, row, POSS[i][0], POSS[i][1])
-    draw.text((540, 1045), "VIGENCIA HASTA AGOTAR EXISTENCIAS | ARIZONE AUTO PARTS", fill=(130, 130, 130), font=f_footer, anchor="mm")
+    for i, (_, row) in enumerate(df_chunk.iterrows()):
+        if i >= 6: break
+        px, py = POSS[i]; x0, y0 = px - 165, py - 200
+        draw.rectangle([x0, y0, x0+330, y0+400], outline=(220, 220, 220), width=1)
+        try:
+            res = requests.get(row['IMAGEN'], timeout=5)
+            p_img = Image.open(BytesIO(res.content)).convert("RGBA")
+            p_img.thumbnail((280, 240)); img.paste(p_img, (px - p_img.width // 2, y0 + 30), p_img if p_img.mode == 'RGBA' else None)
+        except: pass
+        
+        y_s = y0 + 400 - 85; t_x = x0 + 15
+        if mostrar_precio:
+            p_txt = f"$ {str(row.get('PRECIO 1', '0')).replace('$', '').strip()}"
+            pw = draw.textlength(p_txt, font=f_price) + 16
+            draw.rectangle([x0+15, y_s, x0+15+pw, y_s+48], fill=(227, 29, 43))
+            draw.text((x0+15+pw/2, y_s+24), p_txt, fill="white", font=f_price, anchor="mm")
+            t_x += pw + 12
+        draw.text((t_x, y_s+2), str(row['Sku']), fill=(50,50,50), font=f_sku)
+        n_w = textwrap.wrap(str(row['Nombre']).upper(), width=20); y_n = y_s + 24
+        for line in n_w[:3]: draw.text((t_x, y_n), line, fill=(0,0,0), font=f_name); y_n += 16
     return img
 
+def generar_flyer_individual(row):
+    W, H = 1080, 1080
+    img = Image.new('RGB', (W, H), color=(255, 255, 255)); draw = ImageDraw.Draw(img)
+    try: f_sku = ImageFont.truetype(FONT_BOLD_PATH, 75); f_name = ImageFont.truetype(FONT_BOLD_PATH, 55)
+    except: f_sku = f_name = ImageFont.load_default()
+    draw.rectangle([40, 40, 1040, 170], fill=(218, 207, 184))
+    draw.text((540, 105), str(row['Sku']).upper(), fill=(0,0,0), font=f_sku, anchor="mm")
+    try:
+        res = requests.get(row['IMAGEN'], timeout=10)
+        p_img = Image.open(BytesIO(res.content)).convert("RGBA")
+        ratio = min(960 / p_img.width, 600 / p_img.height)
+        p_img = p_img.resize((int(p_img.width*ratio), int(p_img.height*ratio)), Image.Resampling.LANCZOS)
+        img.paste(p_img, (W//2 - p_img.width//2, 480 - p_img.height//2), p_img if p_img.mode == 'RGBA' else None)
+    except: pass
+    draw.rectangle([40, 830, 1040, 1040], fill=(218, 207, 184))
+    lines = textwrap.wrap(str(row['Nombre']).upper(), width=28)
+    yt = 880
+    for l in lines[:2]: draw.text((540, yt), l, fill=(0,0,0), font=f_name, anchor="mm"); yt += 80
+    return img
+
+def generar_pdf_3x3_original(df, imagen_fondo=None, mostrar_precio=True):
+    output = BytesIO(); c = canvas.Canvas(output, pagesize=A4); width, height = A4
+    f_reader = ImageReader(imagen_fondo) if imagen_fondo else None
+    try: pdfmetrics.registerFont(TTFont('Arial-Bold', FONT_BOLD_PATH)); f_bold = "Arial-Bold"
+    except: f_bold = "Helvetica-Bold"
+    cols, rows, margin, padding = 3, 3, 1 * cm, 0.35 * cm
+    cell_w, cell_h = (width - 2*margin)/cols, (height - 2*margin)/rows
+    style_n = ParagraphStyle('N', fontSize=8, leading=9, textColor=colors.black, fontName=f_bold)
+    for i, row in df.iterrows():
+        idx = i % 9
+        if idx == 0:
+            if f_reader: c.drawImage(f_reader, 0, 0, width=width, height=height)
+            else: c.setFillColor(colors.white); c.rect(0, 0, width, height, fill=1)
+            c.setFillColor(colors.HexColor("#333333")); c.roundRect(0.8*cm, height-1.2*cm, 5.5*cm, 0.7*cm, 3, fill=1)
+            c.setFillColor(colors.white); c.setFont(f_bold, 10); c.drawCentredString(3.55*cm, height-0.95*cm, "PRODUCTOS DISPONIBLES")
+        col, fil = idx % cols, rows - 1 - (idx // cols)
+        x_b, y_b = margin + (col * cell_w), margin + (fil * cell_h)
+        c.setStrokeColor(colors.black); c.setLineWidth(0.4); c.setFillColor(colors.white); c.rect(x_b+3, y_b+3, cell_w-6, cell_h-6, fill=1, stroke=1)
+        try:
+            img = ImageReader(BytesIO(requests.get(row['IMAGEN']).content))
+            c.drawImage(img, x_b+padding, y_b+padding+(cell_h*0.4), width=cell_w-(2*padding), height=cell_h*0.5, preserveAspectRatio=True, anchor='c')
+        except: pass
+        c.setFont(f_bold, 9); c.setFillColor(colors.black); c.drawString(x_b+padding, y_b+padding+(cell_h*0.35), str(row['Sku']))
+        p = Paragraph(str(row['Nombre']), style_n); _, ph = p.wrap(cell_w-(2*padding), cell_h*0.3); p.drawOn(c, x_b+padding, y_b+padding+(cell_h*0.35)-ph-2)
+        if mostrar_precio:
+            pv = f"$ {str(row.get('PRECIO 1', '0')).replace('$','')}"; tw = c.stringWidth(pv, f_bold, 10)
+            c.setFillColor(colors.red); c.roundRect(x_b+padding, y_b+padding+8, tw+8, 14, 2, fill=1)
+            c.setFillColor(colors.white); c.drawString(x_b+padding+4, y_b+padding+11.5, pv)
+        if (i+1) % 9 == 0: c.showPage()
+    c.save(); return output.getvalue()
+
 # ==========================================
-# 4. INTERFAZ STREAMLIT
+# NAVEGACIÓN Y CONTROL
 # ==========================================
 
-st.sidebar.title("ARIZONE Suite")
-opcion = st.sidebar.radio("Herramientas:", ["Inicio", "Catálogo Cuadrícula", "Catálogo Lista", "Catálogo 3x3 Pro", "Volantes Social Media"])
+menu = st.sidebar.selectbox("Módulo:", ["Suite ARIZONE 2026", "Calculadora de Comisiones", "Cotizador Envia"])
 
-if opcion == "Inicio":
-    st.title("🚀 Suite ARIZONE")
-    st.markdown("---")
-    st.write("Columnas requeridas en el archivo:")
-    st.code("Sku, Nombre, Almacen, IMAGEN, PRECIO 1")
-
+if menu == "Calculadora de Comisiones":
+    app_calculadora()
+elif menu == "Cotizador Envia":
+    app_cotizador()
 else:
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        archivo = st.file_uploader("1. Sube tu CSV o Excel", type=['csv', 'xlsx'])
+    st.sidebar.title("Herramientas ARIZONE")
+    opc = st.sidebar.radio("Herramienta:", ["Inicio", "Flyer Individual (1080p)", "Volantes Grid (Redes)", "Catálogo Lista", "Catálogo 3x3 Pro"])
+    mostrar_p = st.sidebar.checkbox("Mostrar PRECIO 1", value=True)
     
-    imagen_fondo = None
-    if opcion == "Catálogo 3x3 Pro":
-        with col2:
-            img_upload = st.file_uploader("2. Fondo (Opcional)", type=['png', 'jpg', 'jpeg'])
-            if img_upload:
-                imagen_fondo = BytesIO(img_upload.read())
-                st.image(imagen_fondo, caption="Fondo", width=100)
-
-    if archivo:
-        df = pd.read_csv(archivo) if archivo.name.endswith('.csv') else pd.read_excel(archivo)
+    if opc == "Inicio":
+        st.title("🚀 Suite de Diseño ARIZONE")
+        st.success("Bienvenido. Usa el menú lateral para subir tu base de datos.")
+    else:
+        file = st.file_uploader("Sube Excel o CSV", type=['csv', 'xlsx'])
+        bg = None
+        if opc == "Catálogo 3x3 Pro":
+            u = st.file_uploader("Fondo"); bg = BytesIO(u.read()) if u else None
         
-        if opcion == "Catálogo Cuadrícula":
-            if st.button("Generar PDF"):
-                pdf = CatalogoGrid(); pdf.add_page()
-                for i, row in df.iterrows():
-                    if i > 0 and i % 6 == 0: pdf.add_page()
-                    pdf.añadir_item_grid(row['Sku'], row['Nombre'], row['IMAGEN'], 25+((i%3)*55), 65+(((i//3)%2)*85))
-                st.download_button("Descargar", bytes(pdf.output()), "Grid_3x2.pdf")
-
-        elif opcion == "Catálogo Lista":
-            if st.button("Generar PDF"):
-                pdf = CatalogoLista(); pdf.add_page()
-                for i, row in df.iterrows():
-                    pdf.añadir_producto(row['Sku'], row['Nombre'], row['IMAGEN'])
-                st.download_button("Descargar", bytes(pdf.output()), "Lista.pdf")
-
-        elif opcion == "Catálogo 3x3 Pro":
-            if st.button("Generar PDF"):
-                pdf_data = generar_pdf_3x3_original(df, imagen_fondo)
-                st.download_button("Descargar", pdf_data, "3x3_Pro.pdf")
-
-        elif opcion == "Volantes Social Media":
-            if st.button("Generar Volantes"):
-                zip_buf = BytesIO()
-                with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_file:
-                    for i in range(0, len(df), 6):
-                        img = generate_grid_flyer(df.iloc[i:i+6])
-                        buf = BytesIO(); img.save(buf, format='PNG')
-                        zip_file.writestr(f"volante_{i//6 + 1}.png", buf.getvalue())
-                st.download_button("Descargar ZIP", zip_buf.getvalue(), "Volantes_Arizone.zip")
+        if file:
+            df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
+            if st.button("Generar Todo"):
+                if opc == "Flyer Individual (1080p)":
+                    zb = BytesIO()
+                    with zipfile.ZipFile(zb, "a") as zf:
+                        for i, r in df.iterrows():
+                            img = generar_flyer_individual(r)
+                            buf = BytesIO(); img.save(buf, format='PNG'); zf.writestr(f"flyer_{r.get('Sku',i)}.png", buf.getvalue())
+                    st.download_button("Bajar Flyers", zb.getvalue(), "Flyers.zip")
+                elif opc == "Volantes Grid (Redes)":
+                    zb = BytesIO()
+                    with zipfile.ZipFile(zb, "a") as zf:
+                        for i in range(0, len(df), 6):
+                            img = generate_grid_flyer_social(df.iloc[i:i+6], mostrar_p)
+                            buf = BytesIO(); img.save(buf, format='PNG'); zf.writestr(f"grid_{i//6+1}.png", buf.getvalue())
+                    st.download_button("Bajar Grids", zb.getvalue(), "Grids.zip")
+                elif opc == "Catálogo Lista":
+                    pdf = CatalogoLista(mostrar_precio=mostrar_p); pdf.add_page()
+                    for _, r in df.iterrows(): pdf.añadir_producto(r['Sku'], r['Nombre'], r['IMAGEN'], r.get('PRECIO 1',''), r.get('Almacen',''))
+                    st.download_button("Bajar Lista PDF", bytes(pdf.output()), "Lista.pdf")
+                elif opc == "Catálogo 3x3 Pro":
+                    st.download_button("Bajar 3x3 PDF", generar_pdf_3x3_original(df, bg, mostrar_p), "3x3_Pro.pdf")
