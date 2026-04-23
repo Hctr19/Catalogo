@@ -22,7 +22,7 @@ from fpdf.enums import XPos, YPos
 from PIL import Image, ImageDraw, ImageFont
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="ARIZONE - Multi App 2026", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="ARIZONE - Multi App 2026", layout="wide")
 
 # Ruta de la fuente
 FONT_BOLD_PATH = "Arial Bold.ttf"
@@ -45,11 +45,11 @@ def obtener_estado_por_cp(cp):
 # ==========================================
 
 def app_cotizador():
-    st.title("🚚 Cotizador de Envíos ARIZONE")
+    st.title("🚚 Cotizador de Envíos")
     
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("📍 Origen")
+        st.subheader("Origen")
         cp_o = st.text_input("CP Origen", value="89364")
         est_o_auto = obtener_estado_por_cp(cp_o)
         estado_o = st.text_input("Estado Origen", value=est_o_auto if est_o_auto else "TM").upper()
@@ -57,7 +57,7 @@ def app_cotizador():
         peso = st.number_input("Peso total (kg)", min_value=0.1, value=1.0, step=0.1)
 
     with col2:
-        st.subheader("🏁 Destino")
+        st.subheader("Destino")
         cp_d = st.text_input("CP Destino", value="")
         est_d_auto = obtener_estado_por_cp(cp_d)
         estado_d = st.text_input("Estado Destino", value=est_d_auto).upper()
@@ -146,34 +146,49 @@ def app_cotizador():
 
 def app_calculadora():
     st.title("💰 Calculadora de Comisiones de Pago")
-    monto = st.sidebar.number_input("Monto Venta ($)", min_value=1.0, value=10000.0)
-    meses = st.sidebar.selectbox("Plazo en meses", options=[0, 3, 6, 9, 12])
-    
-    p_op = {0: 3.36, 3: 8.93, 6: 12.41, 9: 15.89, 12: 19.37}
-    p_mp = {0: 3.70, 3: 9.14, 6: 12.62, 9: 16.68, 12: 18.65}
-    p_eg = {0: 3.36, 3: 8.31, 6: 11.83, 9: 13.22, 12: 18.44}
-    p_ea = {0: 3.36, 3: 7.13, 6: 10.61, 9: 12.93, 12: 15.25}
+    st.markdown("Calcula cuánto recibes neto después de comisiones fijas y meses sin intereses.")
 
-    procesadores = [
-        {"n": "OPENPAY", "f": 2.90, "p": p_op[meses]},
-        {"n": "MERCADOPAGO", "f": 4.64, "p": p_mp[meses]},
-        {"n": "ECARTPAY GENERAL", "f": 4.29, "p": p_eg[meses]},
-        {"n": "ECART AMEX", "f": 4.29, "p": p_ea[meses]}
-    ]
-    
-    final_res = []
-    for pr in procesadores:
-        com = (monto * (pr["p"] / 100)) + pr["f"]
-        final_res.append({
-            "Procesador": pr["n"], 
-            "%": f"{pr['p']}%", 
-            "Comisión Total": round(com, 2), 
-            "Neto a Recibir": round(monto - com, 2)
+    datos_procesadores = {
+        "OPENPAY GENERAL": {"fija": 2.90, "porcentajes": {0: 3.36, 3: 8.93, 6: 12.41, 9: 15.89, 12: 19.37}},
+        "MERCADOPAGO GENERAL": {"fija": 4.64, "porcentajes": {0: 3.70, 3: 9.14, 6: 12.62, 9: 16.68, 12: 18.65}},
+        "ECARTPAY GENERAL": {"fija": 4.29, "porcentajes": {0: 3.36, 3: 8.31, 6: 11.83, 9: 13.22, 12: 18.44}},
+        "ECART AMEX": {"fija": 4.29, "porcentajes": {0: 3.36, 3: 7.1340, 6: 10.6140, 9: 12.9340, 12: 15.2540}}
+    }
+
+    st.sidebar.markdown("---")
+    st.sidebar.header("Configuración de Venta")
+    monto = st.sidebar.number_input("Monto de la venta ($)", min_value=1.0, value=1000.0, step=100.0)
+    meses = st.sidebar.selectbox("Plazo en meses", options=[0, 3, 6, 9, 12])
+
+    resultados = []
+    for nombre, datos in datos_procesadores.items():
+        pct = datos["porcentajes"][meses]
+        fija = datos["fija"]
+        com_var = monto * (pct / 100)
+        total_com = com_var + fija
+        neto = monto - total_com
+        resultados.append({
+            "Procesador": nombre, "% Comisión": f"{pct}%",
+            "Comisión Var.": round(com_var, 2), "Comisión Fija": fija,
+            "Total Com.": round(total_com, 2), "Recibes Neto": round(neto, 2)
         })
-    st.table(pd.DataFrame(final_res))
+
+    df_res = pd.DataFrame(resultados)
+    mejor = df_res.loc[df_res['Recibes Neto'].idxmax()]
+
+    st.subheader("Resultados")
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        st.metric("Mejor Opción", mejor['Procesador'])
+    with c2:
+        st.metric("Neto Máximo a Recibir", f"${mejor['Recibes Neto']:,.2f}")
+    
+    st.markdown("---")
+    st.subheader("Tabla Comparativa")
+    st.dataframe(df_res.style.highlight_max(axis=0, subset=['Recibes Neto'], color='#90EE90'), use_container_width=True)
 
 # ==========================================
-# MÓDULO: ARIZONE DESIGN (CATÁLOGOS)
+# MÓDULO: CATÁLOGOS
 # ==========================================
 
 class CatalogoLista(FPDF):
@@ -320,7 +335,7 @@ else:
     mostrar_p = st.sidebar.checkbox("Mostrar PRECIO 1", value=True)
     
     if opc == "Inicio":
-        st.title("🚀 Suite de Diseño ARIZONE")
+        st.title("Suite Arizone")
         st.success("Bienvenido. Usa el menú lateral para subir tu base de datos.")
     else:
         file = st.file_uploader("Sube Excel o CSV", type=['csv', 'xlsx'])
