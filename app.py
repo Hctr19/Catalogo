@@ -320,15 +320,137 @@ def generar_pdf_3x3_original(df, imagen_fondo=None, mostrar_precio=True):
     c.save(); return output.getvalue()
 
 # ==========================================
+# MÓDULO: GENERADOR DE LINKS DE PAGO
+# ==========================================
+
+def app_pagos():
+    import base64
+    from datetime import datetime
+
+    # --- Leer credenciales desde secrets ---
+    pub_key = st.secrets.get("ECARTPAY_PUBLIC_KEY", "")
+    priv_key = st.secrets.get("ECARTPAY_PRIVATE_KEY", "")
+
+    def obtener_jwt_token(es_sandbox):
+        pub, priv = pub_key.strip(), priv_key.strip()
+        combined = f"{pub}:{priv}"
+        encoded = base64.b64encode(combined.encode('utf-8')).decode('utf-8')
+        base_url = "https://sandbox.ecartpay.com" if es_sandbox else "https://ecartpay.com"
+        headers = {'accept': 'application/json', 'authorization': f'Basic {encoded}'}
+        try:
+            response = requests.post(f"{base_url}/api/authorizations/token", headers=headers)
+            return response.json().get("token") if response.status_code == 200 else None
+        except:
+            return None
+
+    # --- Manejo de la lista de items en session_state ---
+    if 'items_pago' not in st.session_state:
+        st.session_state.items_pago = []
+
+    st.title("💳 Generador de Links con Múltiples Ítems")
+
+    if not pub_key or not priv_key:
+        st.error("⚠️ Faltan las credenciales `ECARTPAY_PUBLIC_KEY` y/o `ECARTPAY_PRIVATE_KEY` en los secrets de la app.")
+        st.stop()
+
+    # Sidebar: opciones del módulo
+    with st.sidebar:
+        st.divider()
+        modo_sandbox = st.checkbox("Modo Sandbox", value=True)
+        if st.button("🗑️ Limpiar lista de productos"):
+            st.session_state.items_pago = []
+
+    # Datos Generales
+    col_a, col_b = st.columns(2)
+    with col_a:
+        nombre_link = st.text_input("Nombre del Link / Referencia", value="Cotizacion Arizone")
+        cliente = st.text_input("Nombre del Cliente", value="Hector Rivera")
+    with col_b:
+        moneda = st.selectbox("Moneda", ["MXN", "USD"])
+
+    st.divider()
+
+    # Sección para capturar items
+    st.subheader("Añadir Productos")
+    c1, c2, c3, c4 = st.columns([4, 1, 2, 1])
+    with c1:
+        in_name = st.text_input("Nombre del producto/servicio")
+    with c2:
+        in_qty = st.number_input("Cantidad", min_value=1, value=1)
+    with c3:
+        in_price = st.number_input("Precio Unitario", min_value=0.0, step=0.1)
+    with c4:
+        st.write(" ")
+        if st.button("➕ Añadir"):
+            if in_name and in_price > 0:
+                st.session_state.items_pago.append({
+                    "name": in_name,
+                    "quantity": int(in_qty),
+                    "price": float(in_price)
+                })
+
+    # Tabla de items
+    if st.session_state.items_pago:
+        st.write("### Resumen de la Orden")
+        st.table(st.session_state.items_pago)
+        total_acumulado = sum(i['quantity'] * i['price'] for i in st.session_state.items_pago)
+        st.write(f"**Total a cobrar: {total_acumulado:,.2f} {moneda}**")
+
+        if st.button("🚀 Generar Link de Pago con estos Items"):
+            jwt = obtener_jwt_token(modo_sandbox)
+            if jwt:
+                base_url = "https://sandbox.ecartpay.com" if modo_sandbox else "https://ecartpay.com"
+                payload = {
+                    "name": nombre_link,
+                    "first_name": cliente,
+                    "currency": moneda,
+                    "start_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "quantity_uses": -1,
+                    "items": st.session_state.items_pago,
+                    "shipping_address": {
+                        "first_name": cliente,
+                        "last_name": "N/A",
+                        "address1": "Calle Limite Sur 412",
+                        "country": {"code": "MX", "name": "Mexico"},
+                        "state": {"code": "TM"},
+                        "city": "Tampico",
+                        "postal_code": "89364",
+                        "phone": "8330000000"
+                    }
+                }
+                with st.spinner("Creando link de pago..."):
+                    res = requests.post(
+                        f"{base_url}/api/templates",
+                        headers={'Authorization': jwt, 'Content-Type': 'application/json'},
+                        json=payload
+                    )
+                    if res.status_code in [200, 201]:
+                        data = res.json()
+                        url_final = data.get("payment_link")
+                        if url_final:
+                            st.success("¡Link generado exitosamente!")
+                            st.code(url_final)
+                            st.link_button("Abrir Pantalla de Pago", url_final)
+                    else:
+                        st.error(f"Error {res.status_code}: {res.text}")
+            else:
+                st.error("No se pudo autenticar con EcartPay. Verifica las credenciales en secrets.")
+    else:
+        st.info("Agrega al menos un producto para generar el link.")
+
+
+# ==========================================
 # NAVEGACIÓN Y CONTROL
 # ==========================================
 
-menu = st.sidebar.selectbox("Módulo:", ["Suite ARIZONE 2026", "Calculadora de Comisiones", "Cotizador Envia"])
+menu = st.sidebar.selectbox("Módulo:", ["Suite ARIZONE 2026", "Calculadora de Comisiones", "Cotizador Envia", "Generador de Pagos"])
 
 if menu == "Calculadora de Comisiones":
     app_calculadora()
 elif menu == "Cotizador Envia":
     app_cotizador()
+elif menu == "Generador de Pagos":
+    app_pagos()
 else:
     st.sidebar.title("Herramientas ARIZONE")
     opc = st.sidebar.radio("Herramienta:", ["Inicio", "Flyer Individual (1080p)", "Volantes Grid (Redes)", "Catálogo Lista", "Catálogo 3x3 Pro"])
