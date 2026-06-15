@@ -44,9 +44,40 @@ def obtener_estado_por_cp(cp):
 # MÓDULO: COTIZADOR (OPTIMIZADO)
 # ==========================================
 
+@st.cache_data(show_spinner="Cargando empaques de Envia...")
+def obtener_paquetes_envia(token):
+    try:
+        url = "https://queries.envia.com/all-packages"
+        headers = {"Authorization": f"Bearer {token}"}
+        res = requests.get(url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            if isinstance(data, dict) and isinstance(data.get("data"), list):
+                return data["data"]
+            elif isinstance(data, list):
+                return data
+    except Exception as e:
+        pass
+    return []
+
 def app_cotizador():
     st.title("🚚 Cotizador de Envíos")
     
+    # Obtener token de Envia
+    token = st.secrets.get("ENVIA_TOKEN", "")
+    if token:
+        token = token.replace("Bearer ", "").strip()
+        
+    # Inicializar estado para peso y dimensiones
+    if "peso_val" not in st.session_state:
+        st.session_state.peso_val = 1.0
+    if "largo_val" not in st.session_state:
+        st.session_state.largo_val = 20
+    if "ancho_val" not in st.session_state:
+        st.session_state.ancho_val = 20
+    if "alto_val" not in st.session_state:
+        st.session_state.alto_val = 20
+
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Origen")
@@ -54,7 +85,7 @@ def app_cotizador():
         est_o_auto = obtener_estado_por_cp(cp_o)
         estado_o = st.text_input("Estado Origen", value=est_o_auto if est_o_auto else "TM").upper()
         ciudad_o = st.text_input("Ciudad Origen", value="Tampico")
-        peso = st.number_input("Peso total (kg)", min_value=0.1, value=1.0, step=0.1)
+        peso = st.number_input("Peso total (kg)", min_value=0.1, step=0.1, key="peso_val")
 
     with col2:
         st.subheader("Destino")
@@ -66,13 +97,44 @@ def app_cotizador():
         st.info("Servicio: Parcel (Paquetería)")
 
     st.markdown("---")
+    
+    # Cargar empaques si hay token
+    if token:
+        paquetes = obtener_paquetes_envia(token)
+        if paquetes:
+            opciones = ["Ingresar manualmente"]
+            paquetes_dict = {}
+            for p in paquetes:
+                nombre = p.get("description") or p.get("content") or p.get("name") or f"Paquete #{p.get('package_id', '')}"
+                desc = f"📦 {nombre} ({p.get('length', 0)}x{p.get('width', 0)}x{p.get('height', 0)} cm - {p.get('weight', 0)} kg)"
+                opciones.append(desc)
+                paquetes_dict[desc] = p
+                
+            def al_cambiar_paquete():
+                sel = st.session_state.sel_paquete_key
+                if sel in paquetes_dict:
+                    pkg = paquetes_dict[sel]
+                    st.session_state.peso_val = float(pkg.get("weight", 1.0))
+                    st.session_state.largo_val = int(float(pkg.get("length", 20)))
+                    st.session_state.ancho_val = int(float(pkg.get("width", 20)))
+                    st.session_state.alto_val = int(float(pkg.get("height", 20)))
+            
+            st.selectbox("Seleccionar empaque guardado (Envia)", opciones, key="sel_paquete_key", on_change=al_cambiar_paquete)
+        else:
+            st.info("💡 No tienes empaques guardados en tu cuenta de Envia o la lista está vacía.")
+    else:
+        st.warning("⚠️ No se detectó `ENVIA_TOKEN` en los secrets. No se pueden precargar paquetes.")
+
     st.subheader("📦 Dimensiones (cm)")
     c1, c2, c3 = st.columns(3)
-    largo = c1.number_input("Largo", min_value=1, value=20)
-    ancho = c2.number_input("Ancho", min_value=1, value=20)
-    alto = c3.number_input("Alto", min_value=1, value=20)
+    largo = c1.number_input("Largo", min_value=1, key="largo_val")
+    ancho = c2.number_input("Ancho", min_value=1, key="ancho_val")
+    alto = c3.number_input("Alto", min_value=1, key="alto_val")
 
     if st.button("Cotizar Todas las Paqueterías"):
+        if not token:
+            st.error("Falta el token de Envia en st.secrets (ENVIA_TOKEN).")
+            return
         if not cp_d or not ciudad_d:
             st.error("Completa el CP y Ciudad de destino.")
             return
@@ -87,7 +149,6 @@ def app_cotizador():
             status.text(f"Consultando {carrier.capitalize()}...")
             try:
                 url = "https://api.envia.com/ship/rate/"
-                token = st.secrets["ENVIA_TOKEN"].replace("Bearer ", "").strip()
                 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                 
                 payload = {
@@ -353,10 +414,12 @@ def app_pagos():
         st.error("⚠️ Faltan las credenciales `ECARTPAY_PUBLIC_KEY` y/o `ECARTPAY_PRIVATE_KEY` en los secrets de la app.")
         st.stop()
 
+    # Configurar modo sandbox internamente a través de secrets (Falso por defecto)
+    modo_sandbox = st.secrets.get("ECARTPAY_SANDBOX", False)
+
     # Sidebar: opciones del módulo
     with st.sidebar:
         st.divider()
-        modo_sandbox = st.checkbox("Modo Sandbox", value=True)
         if st.button("🗑️ Limpiar lista de productos"):
             st.session_state.items_pago = []
 
@@ -364,7 +427,7 @@ def app_pagos():
     col_a, col_b = st.columns(2)
     with col_a:
         nombre_link = st.text_input("Nombre del Link / Referencia", value="Cotizacion Arizone")
-        cliente = st.text_input("Nombre del Cliente", value="Hector Rivera")
+        cliente = st.text_input("Nombre del Cliente", value="Cliente Arz")
     with col_b:
         moneda = st.selectbox("Moneda", ["MXN", "USD"])
 
@@ -396,6 +459,25 @@ def app_pagos():
         total_acumulado = sum(i['quantity'] * i['price'] for i in st.session_state.items_pago)
         st.write(f"**Total a cobrar: {total_acumulado:,.2f} {moneda}**")
 
+        msi_seleccionados = []
+        if moneda == "MXN":
+            st.write("---")
+            st.subheader("📅 Configuración de Meses Sin Intereses (MSI)")
+            ofrecer_msi = st.checkbox("Ofrecer Meses Sin Intereses para esta venta", value=False)
+            if ofrecer_msi:
+                c_msi1, c_msi2, c_msi3 = st.columns(3)
+                with c_msi1:
+                    msi_3 = st.checkbox("3 meses", value=True)
+                with c_msi2:
+                    msi_6 = st.checkbox("6 meses", value=True)
+                with c_msi3:
+                    msi_9 = st.checkbox("9 meses", value=True)
+                
+                if msi_3: msi_seleccionados.append(3)
+                if msi_6: msi_seleccionados.append(6)
+                if msi_9: msi_seleccionados.append(9)
+            st.write("---")
+
         if st.button("🚀 Generar Link de Pago con estos Items"):
             jwt = obtener_jwt_token(modo_sandbox)
             if jwt:
@@ -418,6 +500,11 @@ def app_pagos():
                         "phone": "8330000000"
                     }
                 }
+                if msi_seleccionados:
+                    payload["installments_information"] = [
+                        {"quantity": int(m), "fixed_installments": False}
+                        for m in msi_seleccionados
+                    ]
                 with st.spinner("Creando link de pago..."):
                     res = requests.post(
                         f"{base_url}/api/templates",
@@ -466,25 +553,58 @@ else:
             u = st.file_uploader("Fondo"); bg = BytesIO(u.read()) if u else None
         
         if file:
-            df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-            if st.button("Generar Todo"):
-                if opc == "Flyer Individual (1080p)":
-                    zb = BytesIO()
-                    with zipfile.ZipFile(zb, "a") as zf:
-                        for i, r in df.iterrows():
-                            img = generar_flyer_individual(r)
-                            buf = BytesIO(); img.save(buf, format='PNG'); zf.writestr(f"flyer_{r.get('Sku',i)}.png", buf.getvalue())
-                    st.download_button("Bajar Flyers", zb.getvalue(), "Flyers.zip")
-                elif opc == "Volantes Grid (Redes)":
-                    zb = BytesIO()
-                    with zipfile.ZipFile(zb, "a") as zf:
-                        for i in range(0, len(df), 6):
-                            img = generate_grid_flyer_social(df.iloc[i:i+6], mostrar_p)
-                            buf = BytesIO(); img.save(buf, format='PNG'); zf.writestr(f"grid_{i//6+1}.png", buf.getvalue())
-                    st.download_button("Bajar Grids", zb.getvalue(), "Grids.zip")
-                elif opc == "Catálogo Lista":
-                    pdf = CatalogoLista(mostrar_precio=mostrar_p); pdf.add_page()
-                    for _, r in df.iterrows(): pdf.añadir_producto(r['Sku'], r['Nombre'], r['IMAGEN'], r.get('PRECIO 1',''), r.get('Almacen',''))
-                    st.download_button("Bajar Lista PDF", bytes(pdf.output()), "Lista.pdf")
-                elif opc == "Catálogo 3x3 Pro":
-                    st.download_button("Bajar 3x3 PDF", generar_pdf_3x3_original(df, bg, mostrar_p), "3x3_Pro.pdf")
+            try:
+                df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
+                # Normalizar nombres de columnas
+                df.columns = [str(c).strip() for c in df.columns]
+                
+                mapeo_columnas = {}
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if col_lower == 'sku':
+                        mapeo_columnas[col] = 'Sku'
+                    elif col_lower in ['nombre', 'name']:
+                        mapeo_columnas[col] = 'Nombre'
+                    elif col_lower in ['imagen', 'img', 'image']:
+                        mapeo_columnas[col] = 'IMAGEN'
+                    elif col_lower in ['precio 1', 'precio', 'price']:
+                        mapeo_columnas[col] = 'PRECIO 1'
+                    elif col_lower in ['almacen', 'stock', 'almacén']:
+                        mapeo_columnas[col] = 'Almacen'
+                
+                df = df.rename(columns=mapeo_columnas)
+                
+                # Validar columnas requeridas
+                columnas_requeridas = ['Sku', 'Nombre', 'IMAGEN']
+                columnas_faltantes = [c for c in columnas_requeridas if c not in df.columns]
+                
+                if columnas_faltantes:
+                    st.error(f"⚠️ El archivo no contiene las columnas necesarias: {', '.join(columnas_faltantes)}. Asegúrate de que las columnas tengan nombres similares a: Sku, Nombre, Imagen.")
+                else:
+                    st.success("✅ Archivo cargado y validado correctamente.")
+                    st.write("Vista previa de los datos:")
+                    st.dataframe(df.head(3), use_container_width=True)
+                    
+                    if st.button("Generar Todo"):
+                        if opc == "Flyer Individual (1080p)":
+                            zb = BytesIO()
+                            with zipfile.ZipFile(zb, "a") as zf:
+                                for i, r in df.iterrows():
+                                    img = generar_flyer_individual(r)
+                                    buf = BytesIO(); img.save(buf, format='PNG'); zf.writestr(f"flyer_{r.get('Sku',i)}.png", buf.getvalue())
+                            st.download_button("Bajar Flyers", zb.getvalue(), "Flyers.zip")
+                        elif opc == "Volantes Grid (Redes)":
+                            zb = BytesIO()
+                            with zipfile.ZipFile(zb, "a") as zf:
+                                for i in range(0, len(df), 6):
+                                    img = generate_grid_flyer_social(df.iloc[i:i+6], mostrar_p)
+                                    buf = BytesIO(); img.save(buf, format='PNG'); zf.writestr(f"grid_{i//6+1}.png", buf.getvalue())
+                            st.download_button("Bajar Grids", zb.getvalue(), "Grids.zip")
+                        elif opc == "Catálogo Lista":
+                            pdf = CatalogoLista(mostrar_precio=mostrar_p); pdf.add_page()
+                            for _, r in df.iterrows(): pdf.añadir_producto(r['Sku'], r['Nombre'], r['IMAGEN'], r.get('PRECIO 1',''), r.get('Almacen',''))
+                            st.download_button("Bajar Lista PDF", bytes(pdf.output()), "Lista.pdf")
+                        elif opc == "Catálogo 3x3 Pro":
+                            st.download_button("Bajar 3x3 PDF", generar_pdf_3x3_original(df, bg, mostrar_p), "3x3_Pro.pdf")
+            except Exception as e:
+                st.error(f"Error al procesar el archivo: {e}")
