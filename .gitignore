@@ -1,0 +1,20 @@
+# Streamlit secrets (contiene llaves y tokens API)
+.streamlit/secrets.toml
+
+# Python cache y compilaciones
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de entorno virtual
+.venv/
+venv/
+env/
+ENV/
+
+# Archivos temporales del editor/sistema
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
