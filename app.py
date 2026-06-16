@@ -70,26 +70,35 @@ def parsear_direccion_con_ia(texto_libre, api_key):
         "contents": [{"parts": [{"text": prompt}]}]
     }
     
-    try:
-        res = requests.post(url, json=payload, headers=headers, timeout=10)
-        if res.status_code == 200:
-            resultado = res.json()
-            texto_respuesta = resultado['candidates'][0]['content']['parts'][0]['text'].strip()
-            # Limpiar por si acaso la IA ignora la instrucción de omitir markdown
-            if "```" in texto_respuesta:
-                parts = texto_respuesta.split("```")
-                for part in parts:
-                    part_clean = part.strip()
-                    if part_clean.startswith("json"):
-                        part_clean = part_clean[4:].strip()
-                    if part_clean.startswith("{") and part_clean.endswith("}"):
-                        texto_respuesta = part_clean
-                        break
+    intentos = 3
+    for intento in range(intentos):
+        try:
+            res = requests.post(url, json=payload, headers=headers, timeout=30)
+            if res.status_code == 200:
+                resultado = res.json()
+                texto_respuesta = resultado['candidates'][0]['content']['parts'][0]['text'].strip()
+                # Limpiar por si acaso la IA ignora la instrucción de omitir markdown
+                if "```" in texto_respuesta:
+                    parts = texto_respuesta.split("```")
+                    for part in parts:
+                        part_clean = part.strip()
+                        if part_clean.startswith("json"):
+                            part_clean = part_clean[4:].strip()
+                        if part_clean.startswith("{") and part_clean.endswith("}"):
+                            texto_respuesta = part_clean
+                            break
+                else:
+                    texto_respuesta = texto_respuesta.strip()
+                return json.loads(texto_respuesta)
             else:
-                texto_respuesta = texto_respuesta.strip()
-            return json.loads(texto_respuesta)
-    except Exception as e:
-        st.error(f"Error al procesar con la IA: {e}")
+                if intento == intentos - 1:
+                    st.error(f"Error HTTP al llamar a la IA (Código {res.status_code}): {res.text}")
+        except requests.exceptions.Timeout:
+            if intento == intentos - 1:
+                st.error(f"Error al procesar con la IA: El servidor de Google no respondió a tiempo después de {intentos} intentos. (Timeout de 30s)")
+        except Exception as e:
+            if intento == intentos - 1:
+                st.error(f"Error al procesar con la IA: {e}")
     return None
 
 # --- LÓGICA DE AUTORELLENO DE ESTADOS (MÉXICO) ---
