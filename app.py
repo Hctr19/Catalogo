@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import json
 import os
 import math
 import zipfile
@@ -26,6 +27,70 @@ st.set_page_config(page_title="ARIZONE - Multi App 2026", layout="wide")
 
 # Ruta de la fuente
 FONT_BOLD_PATH = "Arial Bold.ttf"
+
+# --- NUEVA FUNCIÓN PARA PROCESAR DIRECCIONES CON GEMINI ---
+def limpiar_telefono_10_digitos(tel):
+    if not tel:
+        return "8330000000"
+    num = "".join(c for c in str(tel) if c.isdigit())
+    if len(num) == 10:
+        return num
+    elif len(num) > 10:
+        return num[-10:]
+    else:
+        return (num + "0000000000")[:10]
+
+def parsear_direccion_con_ia(texto_libre, api_key):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    
+    prompt = f"""
+    Analiza el siguiente texto que contiene una dirección de destino para un envío y extrae la información en un formato JSON estrictamente limpio. 
+    Si algún dato no viene en el texto, déjalo como una cadena vacía "". No inventes datos.
+    
+    Texto del cliente: "{texto_libre}"
+    
+    El formato JSON debe ser exactamente con estas llaves obligatorias:
+    {{
+      "name": "Nombre completo de la persona",
+      "phone": "Teléfono a 10 dígitos (solo números)",
+      "street": "Nombre de la calle",
+      "number": "Número exterior",
+      "interiorNumber": "Número interior o departamento",
+      "district": "Colonia",
+      "city": "Ciudad o Municipio",
+      "state": "Código de 2 letras del Estado (ej: TM, NL, JC, CX)",
+      "zipCode": "Código Postal de 5 dígitos",
+      "reference": "Referencias adicionales de la casa/entre calles"
+    }}
+    Devuelve ÚNICAMENTE el JSON estructurado, sin bloques de código Markdown (sin ```json) ni texto explicativo.
+    """
+    
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+    
+    try:
+        res = requests.post(url, json=payload, headers=headers, timeout=10)
+        if res.status_code == 200:
+            resultado = res.json()
+            texto_respuesta = resultado['candidates'][0]['content']['parts'][0]['text'].strip()
+            # Limpiar por si acaso la IA ignora la instrucción de omitir markdown
+            if "```" in texto_respuesta:
+                parts = texto_respuesta.split("```")
+                for part in parts:
+                    part_clean = part.strip()
+                    if part_clean.startswith("json"):
+                        part_clean = part_clean[4:].strip()
+                    if part_clean.startswith("{") and part_clean.endswith("}"):
+                        texto_respuesta = part_clean
+                        break
+            else:
+                texto_respuesta = texto_respuesta.strip()
+            return json.loads(texto_respuesta)
+    except Exception as e:
+        st.error(f"Error al procesar con la IA: {e}")
+    return None
 
 # --- LÓGICA DE AUTORELLENO DE ESTADOS (MÉXICO) ---
 def obtener_estado_por_cp(cp):
@@ -697,12 +762,264 @@ def app_pagos():
 
 
 # ==========================================
+# MÓDULO MODIFICADO: COTIZAR PRIMERO, SELECCIONAR Y EMITIR DESPUÉS
+# ==========================================
+def app_generar_guias():
+    # --- PROTECCIÓN POR PIN (Evitar acceso no autorizado) ---
+    pin_correcto = st.secrets.get("GUIAS_PIN", "1234").strip()
+    if "guias_autorizado" not in st.session_state:
+        st.session_state.guias_autorizado = False
+
+    if not st.session_state.guias_autorizado:
+        st.subheader("🔒 Acceso Restringido")
+        pin_ingresado = st.text_input("Introduce el PIN de acceso para entrar a este módulo:", type="password", key="guias_pin_input")
+        if st.button("🔑 Ingresar", key="guias_pin_btn"):
+            if pin_ingresado.strip() == pin_correcto:
+                st.session_state.guias_autorizado = True
+                st.success("¡Acceso concedido!")
+                st.rerun()
+            else:
+                st.error("PIN incorrecto. Intenta de nuevo.")
+        return
+
+    # Si está autorizado, se muestra el módulo con opción de bloquear
+    col_title, col_lock = st.columns([4, 1])
+    with col_title:
+        st.title("🎫 Generación de Guías con Inteligencia Artificial")
+    with col_lock:
+        st.write(" ")
+        if st.button("🔒 Bloquear Módulo"):
+            st.session_state.guias_autorizado = False
+            st.rerun()
+            
+    token = st.secrets.get("ENVIA_TOKEN", "").replace("Bearer ", "").strip()
+    gemini_key = st.secrets.get("GEMINI_API_KEY", "").strip()
+    
+    if not token:
+        st.error("Falta el token de Envia en st.secrets (ENVIA_TOKEN).")
+        return
+
+    # Inicializar estados para las tarifas encontradas
+    if "tarifas_disponibles" not in st.session_state:
+        st.session_state.tarifas_disponibles = []
+    if "payload_respaldo" not in st.session_state:
+        st.session_state.payload_respaldo = None
+
+    # --- SECCIÓN DE ENTRADA INTELIGENTE (IA) ---
+    st.markdown("### 🧠 Entrada Inteligente de Dirección")
+    with st.expander("✨ Pegar dirección en texto plano (La IA rellenará el destino automáticamente)", expanded=True):
+        texto_direccion = st.text_area("Pega aquí el bloque de texto que te mandó tu cliente (Ej: Nombre, Calle, CP todo junto):", 
+                                       placeholder="Ej: Enviar a Juan Pérez, cel 8331234567, Calle Hidalgo 302 Col. Centro, Tampico, Tamaulipas, CP 89000.")
+        if st.button("🪄 Procesar y Rellenar Campos", type="primary"):
+            if not gemini_key:
+                st.error("No has configurado la `GEMINI_API_KEY` en tus secrets.")
+            elif not texto_direccion:
+                st.warning("Por favor escribe o pega algún texto.")
+            else:
+                with st.spinner("La Inteligencia Artificial está ordenando los datos..."):
+                    datos_ia = parsear_direccion_con_ia(texto_direccion, gemini_key)
+                    if datos_ia:
+                        st.session_state["dest_name"] = datos_ia.get("name", "")
+                        st.session_state["dest_phone"] = datos_ia.get("phone", "")
+                        st.session_state["dest_street"] = datos_ia.get("street", "")
+                        st.session_state["dest_number"] = datos_ia.get("number", "")
+                        st.session_state["dest_interior"] = datos_ia.get("interiorNumber", "")
+                        st.session_state["dest_district"] = datos_ia.get("district", "")
+                        st.session_state["dest_city"] = datos_ia.get("city", "")
+                        st.session_state["dest_state"] = datos_ia.get("state", "")
+                        st.session_state["dest_cp"] = datos_ia.get("zipCode", "")
+                        st.session_state["dest_ref"] = datos_ia.get("reference", "")
+                        st.success("¡Campos de Destino actualizados con éxito!")
+                        st.rerun()
+
+    st.markdown("---")
+
+    # --- DISEÑO EN 3 COLUMNAS ---
+    col_origen, col_destino, col_paquete = st.columns([1.1, 1.1, 1.2])
+
+    with col_origen:
+        st.subheader("Dirección de Origen")
+        orig_name = st.text_input("Nombre completo *", value=st.secrets.get("ORIGIN_NAME", "Arizone Supply"), key="orig_name")
+        orig_company = st.text_input("Empresa", value=st.secrets.get("ORIGIN_COMPANY", "arizone supply"), key="orig_company")
+        orig_email = st.text_input("Email", value=st.secrets.get("ORIGIN_EMAIL", "hector.arizone@gmail.com"), key="orig_email")
+        orig_phone = st.text_input("Teléfono *", value=st.secrets.get("ORIGIN_PHONE", "8333315287"), key="orig_phone")
+        orig_country = st.selectbox("País *", ["Mexico"], key="orig_country")
+        orig_street = st.text_input("Calle *", value=st.secrets.get("ORIGIN_STREET", "Av. Hidalgo"), key="orig_street")
+        orig_number = st.text_input("Número", value=st.secrets.get("ORIGIN_NUMBER", "100"), key="orig_number")
+        orig_cp = st.text_input("Código postal *", value="89364", key="orig_cp")
+        
+        c_o, e_o = obtener_detalles_por_cp(orig_cp)
+        orig_district = st.text_input("Colonia", value="Centro", key="orig_district")
+        orig_city = st.text_input("Ciudad *", value=c_o if c_o else "Tampico", key="orig_city")
+        orig_state = st.text_input("Estado *", value=e_o if e_o else "TM", key="orig_state")
+        orig_rfc = st.text_input("RFC", key="orig_rfc")
+        orig_ref = st.text_input("Referencia de dirección", key="orig_ref")
+
+    with col_destino:
+        st.subheader("Dirección de Destino")
+        dest_name = st.text_input("Nombre completo *", key="dest_name")
+        dest_company = st.text_input("Empresa", key="dest_company")
+        dest_email = st.text_input("Email", value="cliente@gmail.com", key="dest_email")
+        dest_phone = st.text_input("Teléfono *", key="dest_phone")
+        dest_country = st.selectbox("País *", ["Mexico"], key="dest_country")
+        dest_street = st.text_input("Calle *", key="dest_street")
+        dest_number = st.text_input("Número", key="dest_number")
+        dest_cp = st.text_input("Código postal *", key="dest_cp")
+        
+        c_d, e_d = obtener_detalles_por_cp(dest_cp) if dest_cp else ("", "")
+        dest_district = st.text_input("Colonia", value=st.session_state.get("dest_district", ""), key="dest_district")
+        dest_city = st.text_input("Ciudad *", value=c_d if c_d else st.session_state.get("dest_city", ""), key="dest_city")
+        dest_state = st.text_input("Estado *", value=e_d if e_d else st.session_state.get("dest_state", ""), key="dest_state")
+        dest_rfc = st.text_input("RFC", key="dest_rfc")
+        dest_ref = st.text_input("Referencia de dirección", value=st.session_state.get("dest_ref", ""), key="dest_ref")
+
+    with col_paquete:
+        st.subheader("Tipo de Envío y Paquete")
+        tipo_envio = st.radio("Tipo de Envío", ["Caja", "Sobre", "Carga"], horizontal=True)
+        
+        paquetes = obtener_paquetes_envia(token)
+        filtro_p = st.text_input("🔍 Buscar empaque guardado SKU:", key="guias_filtro_sku").strip().lower()
+        
+        paquetes_filtrados = []
+        for p in paquetes:
+            n = p.get("description") or p.get("content") or p.get("name") or ""
+            if not filtro_p or filtro_p in n.lower():
+                paquetes_filtrados.append(p)
+                
+        opciones_p = ["Manual"]
+        paquetes_dict = {}
+        for p in paquetes_filtrados:
+            n = p.get("description") or p.get("content") or p.get("name") or f"Paquete #{p.get('package_id', '')}"
+            d = f"📦 {n} ({p.get('length', 0)}x{p.get('width', 0)}x{p.get('height', 0)} cm - {p.get('weight', 0)} kg)"
+            opciones_p.append(d)
+            paquetes_dict[d] = p
+            
+        sel_p = st.selectbox("Paquetes guardados", opciones_p, key="guias_sel_p")
+        
+        v_w, v_l, v_wd, v_h, v_desc = 1.0, 20, 20, 20, "box"
+        if sel_p in paquetes_dict:
+            p_sel = paquetes_dict[sel_p]
+            v_w = float(p_sel.get("weight", 1.0))
+            v_l = int(float(p_sel.get("length", 20)))
+            v_wd = int(float(p_sel.get("width", 20)))
+            v_h = int(float(p_sel.get("height", 20)))
+            v_desc = p_sel.get("description") or p_sel.get("content") or "box"
+
+        p_desc = st.text_input("Contenido *", value=v_desc)
+        p_weight = st.number_input("Peso (KG) *", min_value=0.1, value=v_w, step=0.1)
+        p_len = st.number_input("Largo (CM) *", min_value=1, value=v_l)
+        p_wid = st.number_input("Ancho (CM) *", min_value=1, value=v_wd)
+        p_hei = st.number_input("Alto (CM) *", min_value=1, value=v_h)
+        
+        st.markdown("---")
+        
+        # --- PASO 1: BOTÓN SÓLO PARA COTIZAR ---
+        if st.button("🔍 Cotizar Opciones Disponibles", type="primary", use_container_width=True):
+            if not (dest_name and dest_street and dest_cp and dest_phone):
+                st.error("Por favor completa los campos obligatorios del Destinatario (*).")
+                return
+                
+            with st.spinner("Consultando tarifas en tiempo real..."):
+                url_rate = "https://api.envia.com/ship/rate/"
+                headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                
+                payload = {
+                    "origin": {
+                        "name": orig_name, "company": orig_company, "email": orig_email, 
+                        "phone": limpiar_telefono_10_digitos(orig_phone),
+                        "street": orig_street, "number": orig_number, "district": orig_district,
+                        "city": orig_city, "state": orig_state, "country": "MX", "postalCode": str(orig_cp)
+                    },
+                    "destination": {
+                        "name": dest_name, "company": dest_company, "email": dest_email, 
+                        "phone": limpiar_telefono_10_digitos(dest_phone),
+                        "street": dest_street, "number": dest_number, "district": dest_district,
+                        "city": dest_city, "state": dest_state, "country": "MX", "postalCode": str(dest_cp)
+                    },
+                    "packages": [{
+                        "type": "box", "content": "box", "amount": 1, "declaredValue": 0,
+                        "weight": p_weight, "weightUnit": "KG", "lengthUnit": "CM",
+                        "dimensions": {"length": p_len, "width": p_wid, "height": p_hei}
+                    }],
+                    "shipment": {"type": 1},
+                    "settings": {"currency": "MXN"}
+                }
+                
+                try:
+                    res = requests.post(url_rate, json=payload, headers=headers)
+                    res_data = res.json()
+                    
+                    if "data" in res_data and res_data["data"]:
+                        st.session_state.tarifas_disponibles = sorted(res_data["data"], key=lambda x: x.get('totalPrice', 99999))
+                        st.session_state.payload_respaldo = payload
+                        st.success(f"¡Se encontraron {len(st.session_state.tarifas_disponibles)} opciones de envío!")
+                    else:
+                        st.session_state.tarifas_disponibles = []
+                        st.error(f"No se encontró cobertura: {res_data.get('error', {}).get('message', '')}")
+                except Exception as e:
+                    st.error(f"Error de conexión al cotizar: {e}")
+
+    # --- PASO 2: SELECCIÓN MANUAL Y GENERACIÓN FINALES ---
+    if st.session_state.tarifas_disponibles and st.session_state.payload_respaldo:
+        st.markdown("---")
+        st.subheader("📊 Selecciona la paquetería de tu preferencia")
+        
+        opciones_select = []
+        mapeo_tarifas = {}
+        
+        for t in st.session_state.tarifas_disponibles:
+            texto_opcion = f"🚚 {t['carrierDescription']} ({t['serviceDescription']}) - Est. Entrega: {t['deliveryEstimate']} - ${t['totalPrice']} MXN"
+            opciones_select.append(texto_opcion)
+            mapeo_tarifas[texto_opcion] = t
+            
+        paqueteria_elegida = st.selectbox("Opciones encontradas (Ordenadas por menor costo):", opciones_select)
+        
+        if st.button("🎫 Confirmar y Generar Guía Ahora", type="secondary", use_container_width=True):
+            tarifa_final = mapeo_tarifas[paqueteria_elegida]
+            payload_envio = st.session_state.payload_respaldo
+            
+            payload_envio["shipment"]["carrier"] = tarifa_final["carrier"]
+            payload_envio["shipment"]["service"] = tarifa_final["service"]
+            
+            # Restaurar el contenido original p_desc para la etiqueta, a menos que sea Afimex
+            content_value = "box" if tarifa_final["carrier"] == "afimex" else p_desc
+            for pkg in payload_envio.get("packages", []):
+                pkg["content"] = content_value
+            
+            with st.spinner(f"Emitiendo guía oficial con {tarifa_final['carrierDescription']}..."):
+                url_gen = "https://api.envia.com/ship/generate/"
+                headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                
+                try:
+                    res_gen = requests.post(url_gen, json=payload_envio, headers=headers)
+                    gen_data = res_gen.json()
+                    
+                    if "data" in gen_data and gen_data["data"]:
+                        info_guia = gen_data["data"][0]
+                        st.success("🎉 ¡Guía Creada Exitosamente!")
+                        st.write(f"**Número de Rastreo:** `{info_guia.get('trackingNumber')}`")
+                        
+                        url_pdf = info_guia.get("label")
+                        if url_pdf:
+                            st.link_button("📥 Descargar Guía (PDF)", url_pdf, type="primary")
+                            
+                        st.session_state.tarifas_disponibles = []
+                        st.session_state.payload_respaldo = None
+                    else:
+                        st.error(f"Error de Envia al generar: {gen_data.get('error', {}).get('message', 'Desconocido')}")
+                except Exception as e:
+                    st.error(f"Error de conexión al emitir la guía: {e}")
+
+
+# ==========================================
 # NAVEGACIÓN Y CONTROL
 # ==========================================
 
-menu = st.sidebar.selectbox("Módulo:", ["Suite ARIZONE 2026", "Calculadora de Comisiones", "Cotizador Envia", "Generador de Pagos"])
+menu = st.sidebar.selectbox("Módulo:", ["Suite ARIZONE 2026", "Emitir Guías (IA)", "Calculadora de Comisiones", "Cotizador Envia", "Generador de Pagos"])
 
-if menu == "Calculadora de Comisiones":
+if menu == "Emitir Guías (IA)":
+    app_generar_guias()
+elif menu == "Calculadora de Comisiones":
     app_calculadora()
 elif menu == "Cotizador Envia":
     app_cotizador()
