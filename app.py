@@ -923,39 +923,46 @@ def app_generar_guias():
                 url_rate = "https://api.envia.com/ship/rate/"
                 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                 
-                payload = {
-                    "origin": {
-                        "name": orig_name, "company": orig_company, "email": orig_email, 
-                        "phone": limpiar_telefono_10_digitos(orig_phone),
-                        "street": orig_street, "number": orig_number, "district": orig_district,
-                        "city": orig_city, "state": orig_state, "country": "MX", "postalCode": str(orig_cp)
-                    },
-                    "destination": {
-                        "name": dest_name, "company": dest_company, "email": dest_email, 
-                        "phone": limpiar_telefono_10_digitos(dest_phone),
-                        "street": dest_street, "number": dest_number, "district": dest_district,
-                        "city": dest_city, "state": dest_state, "country": "MX", "postalCode": str(dest_cp)
-                    },
-                    "packages": [{
-                        "type": "box", "content": "box", "amount": 1, "declaredValue": 0,
-                        "weight": p_weight, "weightUnit": "KG", "lengthUnit": "CM",
-                        "dimensions": {"length": p_len, "width": p_wid, "height": p_hei}
-                    }],
-                    "shipment": {"type": 1},
-                    "settings": {"currency": "MXN"}
-                }
-                
                 try:
-                    res = requests.post(url_rate, json=payload, headers=headers)
-                    res_data = res.json()
-                    
-                    if "data" in res_data and res_data["data"]:
-                        st.session_state.tarifas_disponibles = sorted(res_data["data"], key=lambda x: x.get('totalPrice', 99999))
-                        st.session_state.payload_respaldo = payload
+                    tarifas_encontradas = []
+                    ultimo_payload = None
+                    # Realizamos la cotización por cada paquetería para cumplir con la obligatoriedad de la llave 'carrier' en Envia API
+                    for carrier in ["afimex", "paquetexpress", "estafeta", "tresguerras", "fedex"]:
+                        payload = {
+                            "origin": {
+                                "name": orig_name, "company": orig_company, "email": orig_email, 
+                                "phone": limpiar_telefono_10_digitos(orig_phone),
+                                "street": orig_street, "number": orig_number, "district": orig_district,
+                                "city": orig_city, "state": orig_state, "country": "MX", "postalCode": str(orig_cp)
+                            },
+                            "destination": {
+                                "name": dest_name, "company": dest_company, "email": dest_email, 
+                                "phone": limpiar_telefono_10_digitos(dest_phone),
+                                "street": dest_street, "number": dest_number, "district": dest_district,
+                                "city": dest_city, "state": dest_state, "country": "MX", "postalCode": str(dest_cp)
+                            },
+                            "packages": [{
+                                "type": "box", "content": "box", "amount": 1, "declaredValue": 0,
+                                "weight": p_weight, "weightUnit": "KG", "lengthUnit": "CM",
+                                "dimensions": {"length": p_len, "width": p_wid, "height": p_hei}
+                            }],
+                            "shipment": {"type": 1, "carrier": carrier},
+                            "settings": {"currency": "MXN"}
+                        }
+                        ultimo_payload = payload
+                        res = requests.post(url_rate, json=payload, headers=headers)
+                        res_data = res.json()
+                        if "data" in res_data and res_data["data"]:
+                            for r in res_data["data"]:
+                                tarifas_encontradas.append(r)
+                                
+                    if tarifas_encontradas:
+                        st.session_state.tarifas_disponibles = sorted(tarifas_encontradas, key=lambda x: x.get('totalPrice', 99999))
+                        st.session_state.payload_respaldo = ultimo_payload
                         st.success(f"¡Se encontraron {len(st.session_state.tarifas_disponibles)} opciones de envío!")
                     else:
                         st.session_state.tarifas_disponibles = []
-                        st.error(f"No se encontró cobertura: {res_data.get('error', {}).get('message', '')}")
+                        st.error("No se encontró cobertura en ninguna paquetería.")
                 except Exception as e:
                     st.error(f"Error de conexión al cotizar: {e}")
 
