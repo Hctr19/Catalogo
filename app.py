@@ -47,13 +47,24 @@ def obtener_estado_por_cp(cp):
 @st.cache_data(show_spinner="Cargando empaques de Envia...")
 def obtener_paquetes_envia(token):
     try:
-        url = "https://queries.envia.com/all-packages"
+        url = "https://queries.envia.com/company-packages"
         headers = {"Authorization": f"Bearer {token}"}
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
             data = res.json()
-            if isinstance(data, dict) and isinstance(data.get("data"), list):
-                return data["data"]
+            if isinstance(data, dict) and "data" in data:
+                d = data["data"]
+                if isinstance(d, dict):
+                    user_pkg = d.get("userPackages", [])
+                    comp_pkg = d.get("companyPackages", [])
+                    # Garantizar que sean listas
+                    if not isinstance(user_pkg, list):
+                        user_pkg = []
+                    if not isinstance(comp_pkg, list):
+                        comp_pkg = []
+                    return user_pkg + comp_pkg
+                elif isinstance(d, list):
+                    return d
             elif isinstance(data, list):
                 return data
     except Exception as e:
@@ -192,11 +203,22 @@ def app_cotizador():
                 if pkg_current:
                     if sel in paquetes_dict:
                         pkg_sel = paquetes_dict[sel]
-                        pkg_current["weight"] = float(pkg_sel.get("weight", 1.0))
-                        pkg_current["length"] = int(float(pkg_sel.get("length", 20)))
-                        pkg_current["width"] = int(float(pkg_sel.get("width", 20)))
-                        pkg_current["height"] = int(float(pkg_sel.get("height", 20)))
+                        w_val = float(pkg_sel.get("weight", 1.0))
+                        l_val = int(float(pkg_sel.get("length", 20)))
+                        w_dim = int(float(pkg_sel.get("width", 20)))
+                        h_val = int(float(pkg_sel.get("height", 20)))
+                        
+                        pkg_current["weight"] = w_val
+                        pkg_current["length"] = l_val
+                        pkg_current["width"] = w_dim
+                        pkg_current["height"] = h_val
                         pkg_current["description"] = pkg_sel.get("description") or pkg_sel.get("content") or "box"
+                        
+                        # Actualizar los estados de los widgets de Streamlit en session_state
+                        st.session_state[f"weight_{i_id}"] = w_val
+                        st.session_state[f"length_{i_id}"] = l_val
+                        st.session_state[f"width_{i_id}"] = w_dim
+                        st.session_state[f"height_{i_id}"] = h_val
                     else:
                         pkg_current["description"] = "manual"
             
@@ -260,6 +282,43 @@ def app_cotizador():
                 url = "https://api.envia.com/ship/rate/"
                 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                 
+                # Consolidar paquetes para paqueterías que no soportan MPS consolidado nativo (como Estafeta, Tresguerras, Afimex)
+                if carrier in ["estafeta", "tresguerras", "afimex"] and len(st.session_state.packages_list) > 1:
+                    total_weight = sum(float(pkg.get("weight", 1.0)) * int(pkg.get("amount", 1)) for pkg in st.session_state.packages_list)
+                    max_length = max(int(pkg.get("length", 20)) for pkg in st.session_state.packages_list)
+                    max_width = max(int(pkg.get("width", 20)) for pkg in st.session_state.packages_list)
+                    max_height = max(int(pkg.get("height", 20)) for pkg in st.session_state.packages_list)
+                    
+                    packages_payload = [{
+                        "type": "box",
+                        "content": "autopartes",
+                        "amount": 1,
+                        "declaredValue": 0,
+                        "weight": total_weight,
+                        "weightUnit": "KG",
+                        "lengthUnit": "CM",
+                        "dimensions": {
+                            "length": max_length,
+                            "width": max_width,
+                            "height": max_height
+                        }
+                    }]
+                else:
+                    packages_payload = [{
+                        "type": "box", 
+                        "content": pkg.get("description", "autopartes") if pkg.get("description") != "manual" else "autopartes", 
+                        "amount": int(pkg["amount"]), 
+                        "declaredValue": 0,
+                        "weight": float(pkg["weight"]), 
+                        "weightUnit": "KG", 
+                        "lengthUnit": "CM",
+                        "dimensions": {
+                            "length": int(pkg["length"]), 
+                            "width": int(pkg["width"]), 
+                            "height": int(pkg["height"])
+                        }
+                    } for pkg in st.session_state.packages_list]
+
                 payload = {
                     "origin": {
                         "name": "ARIZONE", "company": "ARIZONE", "email": "v@a.mx", "phone": "8331",
@@ -271,20 +330,7 @@ def app_cotizador():
                         "street": "C", "number": "1", "district": "CENTRO",
                         "city": ciudad_d, "state": estado_d, "country": "MX", "postalCode": str(cp_d)
                     },
-                    "packages": [{
-                        "type": "box", 
-                        "content": pkg.get("description", "autopartes") if pkg.get("description") != "manual" else "autopartes", 
-                        "amount": int(pkg["amount"]), 
-                        "declaredValue": 500,
-                        "weight": float(pkg["weight"]), 
-                        "weightUnit": "KG", 
-                        "lengthUnit": "CM",
-                        "dimensions": {
-                            "length": int(pkg["length"]), 
-                            "width": int(pkg["width"]), 
-                            "height": int(pkg["height"])
-                        }
-                    } for pkg in st.session_state.packages_list],
+                    "packages": packages_payload,
                     "shipment": {"type": 1, "carrier": carrier},
                     "settings": {"currency": "MXN"}
                 }
