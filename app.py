@@ -283,15 +283,16 @@ def app_cotizador():
                 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                 
                 # Consolidar paquetes para paqueterías que no soportan MPS consolidado nativo (como Estafeta, Tresguerras, Afimex)
-                if carrier in ["estafeta", "tresguerras", "afimex"] and len(st.session_state.packages_list) > 1:
-                    total_weight = sum(float(pkg.get("weight", 1.0)) * int(pkg.get("amount", 1)) for pkg in st.session_state.packages_list)
+                # Solo consolidamos si el peso total es menor o igual a 30 kg (límite estándar de peso por paquete individual)
+                total_weight = sum(float(pkg.get("weight", 1.0)) * int(pkg.get("amount", 1)) for pkg in st.session_state.packages_list)
+                if carrier in ["estafeta", "tresguerras", "afimex"] and len(st.session_state.packages_list) > 1 and total_weight <= 30.0:
                     max_length = max(int(pkg.get("length", 20)) for pkg in st.session_state.packages_list)
                     max_width = max(int(pkg.get("width", 20)) for pkg in st.session_state.packages_list)
                     max_height = max(int(pkg.get("height", 20)) for pkg in st.session_state.packages_list)
                     
                     packages_payload = [{
                         "type": "box",
-                        "content": "autopartes",
+                        "content": "box",
                         "amount": 1,
                         "declaredValue": 0,
                         "weight": total_weight,
@@ -306,7 +307,7 @@ def app_cotizador():
                 else:
                     packages_payload = [{
                         "type": "box", 
-                        "content": pkg.get("description", "autopartes") if pkg.get("description") != "manual" else "autopartes", 
+                        "content": "box", 
                         "amount": int(pkg["amount"]), 
                         "declaredValue": 0,
                         "weight": float(pkg["weight"]), 
@@ -321,12 +322,17 @@ def app_cotizador():
 
                 payload = {
                     "origin": {
-                        "name": "ARIZONE", "company": "ARIZONE", "email": "v@a.mx", "phone": "8331",
-                        "street": "AV", "number": "1", "district": "CENTRO",
+                        "name": st.secrets.get("ORIGIN_NAME", "ARIZONE"),
+                        "company": st.secrets.get("ORIGIN_COMPANY", "ARIZONE"),
+                        "email": st.secrets.get("ORIGIN_EMAIL", "v@a.mx"),
+                        "phone": st.secrets.get("ORIGIN_PHONE", "8330000000"),
+                        "street": st.secrets.get("ORIGIN_STREET", "AV"),
+                        "number": st.secrets.get("ORIGIN_NUMBER", "1"),
+                        "district": st.secrets.get("ORIGIN_DISTRICT", "CENTRO"),
                         "city": ciudad_o, "state": estado_o, "country": "MX", "postalCode": str(cp_o)
                     },
                     "destination": {
-                        "name": "CLIENTE", "company": "C", "email": "c@t.com", "phone": "811",
+                        "name": "CLIENTE", "company": "C", "email": "c@t.com", "phone": "8110000000",
                         "street": "C", "number": "1", "district": "CENTRO",
                         "city": ciudad_d, "state": estado_d, "country": "MX", "postalCode": str(cp_d)
                     },
