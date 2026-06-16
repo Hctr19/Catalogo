@@ -988,6 +988,12 @@ def app_generar_guias():
             payload_envio["shipment"]["carrier"] = tarifa_final["carrier"]
             payload_envio["shipment"]["service"] = tarifa_final["service"]
             
+            # Asegurar parámetros de configuración de impresión requeridos por Envia al generar etiqueta
+            if "settings" not in payload_envio or not payload_envio["settings"]:
+                payload_envio["settings"] = {"currency": "MXN"}
+            payload_envio["settings"]["printFormat"] = "PDF"
+            payload_envio["settings"]["printSize"] = "PAPER_4X6"
+            
             # Restaurar el contenido original p_desc para la etiqueta, a menos que sea Afimex
             content_value = "box" if tarifa_final["carrier"] == "afimex" else p_desc
             for pkg in payload_envio.get("packages", []):
