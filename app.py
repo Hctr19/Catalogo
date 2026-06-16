@@ -102,9 +102,19 @@ def app_cotizador():
     if token:
         paquetes = obtener_paquetes_envia(token)
         if paquetes:
+            # Buscador/Filtro exacto de empaques
+            filtro_txt = st.text_input("🔍 Buscar empaque por SKU o nombre:", value="").strip().lower()
+            
+            # Filtrar
+            paquetes_filtrados = []
+            for p in paquetes:
+                nombre = p.get("description") or p.get("content") or p.get("name") or ""
+                if not filtro_txt or filtro_txt in nombre.lower():
+                    paquetes_filtrados.append(p)
+            
             opciones = ["Ingresar manualmente"]
             paquetes_dict = {}
-            for p in paquetes:
+            for p in paquetes_filtrados:
                 nombre = p.get("description") or p.get("content") or p.get("name") or f"Paquete #{p.get('package_id', '')}"
                 desc = f"📦 {nombre} ({p.get('length', 0)}x{p.get('width', 0)}x{p.get('height', 0)} cm - {p.get('weight', 0)} kg)"
                 opciones.append(desc)
