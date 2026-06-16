@@ -60,6 +60,27 @@ def obtener_paquetes_envia(token):
         pass
     return []
 
+@st.cache_data(show_spinner=False)
+def obtener_detalles_por_cp(cp):
+    if not cp or len(cp) < 5:
+        return "", ""
+    try:
+        url = f"https://geocodes.envia.com/zipcode/MX/{cp}"
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            if isinstance(data, list) and len(data) > 0:
+                item = data[0]
+                city = item.get("locality", "")
+                state_info = item.get("state", {})
+                state = ""
+                if isinstance(state_info, dict):
+                    state = state_info.get("code", {}).get("2digit", "")
+                return city, state
+    except:
+        pass
+    return "", ""
+
 def app_cotizador():
     st.title("🚚 Cotizador de Envíos")
     
@@ -68,85 +89,163 @@ def app_cotizador():
     if token:
         token = token.replace("Bearer ", "").strip()
         
-    # Inicializar estado para peso y dimensiones
-    if "peso_val" not in st.session_state:
-        st.session_state.peso_val = 1.0
-    if "largo_val" not in st.session_state:
-        st.session_state.largo_val = 20
-    if "ancho_val" not in st.session_state:
-        st.session_state.ancho_val = 20
-    if "alto_val" not in st.session_state:
-        st.session_state.alto_val = 20
+    # Inicializar lista de paquetes en session_state
+    if "packages_list" not in st.session_state:
+        st.session_state.packages_list = [{
+            "id": 0,
+            "weight": 1.0,
+            "length": 20,
+            "width": 20,
+            "height": 20,
+            "amount": 1,
+            "description": "manual",
+            "search_txt": ""
+        }]
+        st.session_state.next_package_id = 1
 
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Origen")
         cp_o = st.text_input("CP Origen", value="89364")
-        est_o_auto = obtener_estado_por_cp(cp_o)
-        estado_o = st.text_input("Estado Origen", value=est_o_auto if est_o_auto else "TM").upper()
-        ciudad_o = st.text_input("Ciudad Origen", value="Tampico")
-        peso = st.number_input("Peso total (kg)", min_value=0.1, step=0.1, key="peso_val")
+        ciudad_o, estado_o = obtener_detalles_por_cp(cp_o)
+        if ciudad_o and estado_o:
+            st.caption(f"📍 {ciudad_o}, {estado_o}")
+        else:
+            estado_o = obtener_estado_por_cp(cp_o) or "TM"
+            ciudad_o = "Tampico" if cp_o == "89364" else "Ciudad Origen"
+            st.caption(f"📍 {ciudad_o}, {estado_o} (localizado localmente)")
 
     with col2:
         st.subheader("Destino")
         cp_d = st.text_input("CP Destino", value="")
-        est_d_auto = obtener_estado_por_cp(cp_d)
-        estado_d = st.text_input("Estado Destino", value=est_d_auto).upper()
-        ciudad_d = st.text_input("Ciudad Destino", value="")
-        st.write("")
-        st.info("Servicio: Parcel (Paquetería)")
+        ciudad_d, estado_d = obtener_detalles_por_cp(cp_d) if cp_d else ("", "")
+        if ciudad_d and estado_d:
+            st.caption(f"📍 {ciudad_d}, {estado_d}")
+        else:
+            estado_d = obtener_estado_por_cp(cp_d)
+            ciudad_d = "Ciudad Destino"
+            if cp_d:
+                st.caption(f"📍 {ciudad_d}, {estado_d} (localizado localmente)")
 
     st.markdown("---")
     
     # Cargar empaques si hay token
+    paquetes = []
     if token:
         paquetes = obtener_paquetes_envia(token)
-        if paquetes:
-            # Buscador/Filtro exacto de empaques
-            filtro_txt = st.text_input("🔍 Buscar empaque por SKU o nombre:", value="").strip().lower()
+
+    st.subheader("📦 Lista de Paquetes")
+    
+    # Renderizar cada paquete en la lista
+    for idx in range(len(st.session_state.packages_list)):
+        if idx >= len(st.session_state.packages_list):
+            break
+        pkg = st.session_state.packages_list[idx]
+        
+        # Asegurar que cada paquete tenga un ID único
+        if "id" not in pkg:
+            pkg["id"] = idx
+            if st.session_state.get("next_package_id", 1) <= idx:
+                st.session_state.next_package_id = idx + 1
+                
+        pkg_id = pkg["id"]
+        
+        st.write(f"**Caja #{idx + 1}**")
+        
+        # Filtro y selección alineados en la misma fila (lado a lado)
+        col_search, col_select = st.columns([1, 2])
+        with col_search:
+            filtro_txt = st.text_input("🔍 Buscar SKU/Nombre:", key=f"filtro_{pkg_id}", value=pkg.get("search_txt", "")).strip().lower()
+            pkg["search_txt"] = filtro_txt
             
-            # Filtrar
-            paquetes_filtrados = []
+        paquetes_filtrados = []
+        if paquetes:
             for p in paquetes:
                 nombre = p.get("description") or p.get("content") or p.get("name") or ""
                 if not filtro_txt or filtro_txt in nombre.lower():
                     paquetes_filtrados.append(p)
+                    
+        opciones = ["Ingresar manualmente"]
+        paquetes_dict = {}
+        for p in paquetes_filtrados:
+            nombre = p.get("description") or p.get("content") or p.get("name") or f"Paquete #{p.get('package_id', '')}"
+            desc = f"📦 {nombre} ({p.get('length', 0)}x{p.get('width', 0)}x{p.get('height', 0)} cm - {p.get('weight', 0)} kg)"
+            opciones.append(desc)
+            paquetes_dict[desc] = p
             
-            opciones = ["Ingresar manualmente"]
-            paquetes_dict = {}
-            for p in paquetes_filtrados:
-                nombre = p.get("description") or p.get("content") or p.get("name") or f"Paquete #{p.get('package_id', '')}"
-                desc = f"📦 {nombre} ({p.get('length', 0)}x{p.get('width', 0)}x{p.get('height', 0)} cm - {p.get('weight', 0)} kg)"
-                opciones.append(desc)
-                paquetes_dict[desc] = p
-                
-            def al_cambiar_paquete():
-                sel = st.session_state.sel_paquete_key
-                if sel in paquetes_dict:
-                    pkg = paquetes_dict[sel]
-                    st.session_state.peso_val = float(pkg.get("weight", 1.0))
-                    st.session_state.largo_val = int(float(pkg.get("length", 20)))
-                    st.session_state.ancho_val = int(float(pkg.get("width", 20)))
-                    st.session_state.alto_val = int(float(pkg.get("height", 20)))
+        def get_default_index(i_id=pkg_id, ops=opciones):
+            for o in ops:
+                if o in paquetes_dict:
+                    p = paquetes_dict[o]
+                    pkg_current = next((x for x in st.session_state.packages_list if x.get("id") == i_id), None)
+                    if pkg_current and (float(p.get("weight", 1.0)) == float(pkg_current["weight"]) and
+                        int(float(p.get("length", 20))) == int(pkg_current["length"]) and
+                        int(float(p.get("width", 20))) == int(pkg_current["width"]) and
+                        int(float(p.get("height", 20))) == int(pkg_current["height"])):
+                        return ops.index(o)
+            return 0
             
-            st.selectbox("Seleccionar empaque guardado (Envia)", opciones, key="sel_paquete_key", on_change=al_cambiar_paquete)
-        else:
-            st.info("💡 No tienes empaques guardados en tu cuenta de Envia o la lista está vacía.")
-    else:
-        st.warning("⚠️ No se detectó `ENVIA_TOKEN` en los secrets. No se pueden precargar paquetes.")
+        with col_select:
+            def al_cambiar_paquete(i_id=pkg_id):
+                sel = st.session_state[f"sel_paquete_{i_id}"]
+                pkg_current = next((x for x in st.session_state.packages_list if x.get("id") == i_id), None)
+                if pkg_current:
+                    if sel in paquetes_dict:
+                        pkg_sel = paquetes_dict[sel]
+                        pkg_current["weight"] = float(pkg_sel.get("weight", 1.0))
+                        pkg_current["length"] = int(float(pkg_sel.get("length", 20)))
+                        pkg_current["width"] = int(float(pkg_sel.get("width", 20)))
+                        pkg_current["height"] = int(float(pkg_sel.get("height", 20)))
+                        pkg_current["description"] = pkg_sel.get("description") or pkg_sel.get("content") or "box"
+                    else:
+                        pkg_current["description"] = "manual"
+            
+            st.selectbox("Seleccionar empaque:", opciones, index=get_default_index(), key=f"sel_paquete_{pkg_id}", on_change=al_cambiar_paquete)
 
-    st.subheader("📦 Dimensiones (cm)")
-    c1, c2, c3 = st.columns(3)
-    largo = c1.number_input("Largo", min_value=1, key="largo_val")
-    ancho = c2.number_input("Ancho", min_value=1, key="ancho_val")
-    alto = c3.number_input("Alto", min_value=1, key="alto_val")
+        # Inputs de dimensiones, peso, cantidad y botón eliminar alineados
+        c_qty, c_weight, c_l, c_w, c_h, c_del = st.columns([1.5, 1.5, 1.5, 1.5, 1.5, 1])
+        with c_qty:
+            pkg["amount"] = st.number_input("Cantidad", min_value=1, value=int(pkg["amount"]), key=f"amount_{pkg_id}")
+        with c_weight:
+            pkg["weight"] = st.number_input("Peso (kg)", min_value=0.1, value=float(pkg["weight"]), step=0.1, key=f"weight_{pkg_id}")
+        with c_l:
+            pkg["length"] = st.number_input("Largo (cm)", min_value=1, value=int(pkg["length"]), key=f"length_{pkg_id}")
+        with c_w:
+            pkg["width"] = st.number_input("Ancho (cm)", min_value=1, value=int(pkg["width"]), key=f"width_{pkg_id}")
+        with c_h:
+            pkg["height"] = st.number_input("Alto (cm)", min_value=1, value=int(pkg["height"]), key=f"height_{pkg_id}")
+        with c_del:
+            st.write(" ")
+            st.write(" ")
+            if len(st.session_state.packages_list) > 1:
+                def eliminar_paquete(i_id=pkg_id):
+                    st.session_state.packages_list = [x for x in st.session_state.packages_list if x.get("id") != i_id]
+                st.button("🗑️", key=f"del_{pkg_id}", on_click=eliminar_paquete)
+        
+        st.markdown("---")
+        
+    def agregar_paquete():
+        st.session_state.packages_list.append({
+            "id": st.session_state.next_package_id,
+            "weight": 1.0,
+            "length": 20,
+            "width": 20,
+            "height": 20,
+            "amount": 1,
+            "description": "manual",
+            "search_txt": ""
+        })
+        st.session_state.next_package_id += 1
+    st.button("➕ Agregar paquete", on_click=agregar_paquete)
+    
+    st.markdown("---")
 
     if st.button("Cotizar Todas las Paqueterías"):
         if not token:
             st.error("Falta el token de Envia en st.secrets (ENVIA_TOKEN).")
             return
-        if not cp_d or not ciudad_d:
-            st.error("Completa el CP y Ciudad de destino.")
+        if not cp_d:
+            st.error("Completa el CP de destino.")
             return
 
         # Lista de paqueterías a consultar
@@ -173,10 +272,19 @@ def app_cotizador():
                         "city": ciudad_d, "state": estado_d, "country": "MX", "postalCode": str(cp_d)
                     },
                     "packages": [{
-                        "type": "box", "content": "autopartes", "amount": 1, "declaredValue": 500,
-                        "weight": float(peso), "weightUnit": "KG", "lengthUnit": "CM",
-                        "dimensions": {"length": int(largo), "width": int(ancho), "height": int(alto)}
-                    }],
+                        "type": "box", 
+                        "content": pkg.get("description", "autopartes") if pkg.get("description") != "manual" else "autopartes", 
+                        "amount": int(pkg["amount"]), 
+                        "declaredValue": 500,
+                        "weight": float(pkg["weight"]), 
+                        "weightUnit": "KG", 
+                        "lengthUnit": "CM",
+                        "dimensions": {
+                            "length": int(pkg["length"]), 
+                            "width": int(pkg["width"]), 
+                            "height": int(pkg["height"])
+                        }
+                    } for pkg in st.session_state.packages_list],
                     "shipment": {"type": 1, "carrier": carrier},
                     "settings": {"currency": "MXN"}
                 }
