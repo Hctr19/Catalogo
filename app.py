@@ -457,7 +457,7 @@ def app_calculadora():
         "OPENPAY GENERAL": {"fija": 2.90, "porcentajes": {0: 3.36, 3: 8.93, 6: 12.41, 9: 15.89, 12: 19.37}},
         "MERCADOPAGO GENERAL": {"fija": 4.64, "porcentajes": {0: 3.70, 3: 9.14, 6: 12.62, 9: 16.68, 12: 18.65}},
         "ECARTPAY GENERAL": {"fija": 4.29, "porcentajes": {0: 3.36, 3: 8.31, 6: 11.83, 9: 13.22, 12: 18.44}},
-        "ECART AMEX": {"fija": 4.29, "porcentajes": {0: 3.36, 3: 7.1340, 6: 10.6140, 9: 12.9340, 12: 15.2540}}
+        "ECART AMEX": {"fija": 4.29, "porcentajes": {0: 4.06, 3: 7.83, 6: 11.31, 9: 13.63, 12: 15.95}}
     }
 
     st.sidebar.markdown("---")
